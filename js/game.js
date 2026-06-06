@@ -87,6 +87,63 @@
     }
   }
 
+  // Classify a duration (in quarter-note beats) into its notation: how many
+  // flags, whether the head is hollow, whether it has a stem, and a dot.
+  function rhythmGlyph(dur) {
+    dur = dur || 1;
+    let base = 0.25;
+    for (const b of [4, 2, 1, 0.5, 0.25]) { if (dur >= b - 1e-3) { base = b; break; } }
+    const dotted = Math.abs(dur - base * 1.5) < 0.06;
+    return {
+      flags: base <= 0.25 ? 2 : base <= 0.5 ? 1 : 0,
+      hollow: base >= 2,
+      stem: base < 4,            // whole note has no stem
+      dotted,
+    };
+  }
+
+  // Draw a notehead + stem + flags + augmentation dot for one note. Spacing is
+  // handled by x position; this only conveys the rhythmic *value*.
+  function drawNoteShape(ctx, x, y, gap, color, dur, stemUp, noteRx, noteRy, stemLen) {
+    const g = rhythmGlyph(dur);
+    // stem
+    let tipX, tipY;
+    if (g.stem) {
+      ctx.strokeStyle = color; ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (stemUp) { tipX = x + noteRx - 0.5; tipY = y - stemLen; ctx.moveTo(tipX, y); ctx.lineTo(tipX, tipY); }
+      else { tipX = x - noteRx + 0.5; tipY = y + stemLen; ctx.moveTo(tipX, y); ctx.lineTo(tipX, tipY); }
+      ctx.stroke();
+    }
+    // flags (always hook to the right of the stem, curving toward the head)
+    if (g.stem && g.flags) {
+      ctx.fillStyle = color;
+      const dir = stemUp ? 1 : -1; // +1 = flag hangs downward, -1 = upward
+      for (let k = 0; k < g.flags; k++) {
+        const fy = tipY + dir * k * gap * 0.62;
+        ctx.beginPath();
+        ctx.moveTo(tipX, fy);
+        ctx.quadraticCurveTo(tipX + gap * 1.15, fy + dir * gap * 0.55, tipX + gap * 0.95, fy + dir * gap * 1.55);
+        ctx.quadraticCurveTo(tipX + gap * 0.7, fy + dir * gap * 0.8, tipX, fy + dir * gap * 0.72);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    // notehead
+    ctx.save();
+    ctx.translate(x, y); ctx.rotate(-0.32);
+    ctx.beginPath(); ctx.ellipse(0, 0, noteRx, noteRy, 0, 0, 7);
+    if (g.hollow) { ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke(); }
+    else { ctx.fillStyle = color; ctx.fill(); }
+    ctx.restore();
+    // augmentation dot, in the space to the right of the head
+    if (g.dotted) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.ellipse(x + noteRx + gap * 0.55, y - gap * 0.3, gap * 0.16, gap * 0.16, 0, 0, 7);
+      ctx.fill();
+    }
+  }
+
   class Game {
     constructor() {
       this.reset();
@@ -496,21 +553,9 @@
           ctx.fillText(glyph, n.x - noteRx - 3, y);
         }
 
-        // stem (up if below middle line, else down)
+        // stem + notehead + flags + augmentation dot (conveys the rhythmic value)
         const stemUp = step < middleStep;
-        ctx.strokeStyle = color; ctx.lineWidth = 2;
-        ctx.beginPath();
-        if (stemUp) { ctx.moveTo(n.x + noteRx - 0.5, y); ctx.lineTo(n.x + noteRx - 0.5, y - gap * 3.2); }
-        else { ctx.moveTo(n.x - noteRx + 0.5, y); ctx.lineTo(n.x - noteRx + 0.5, y + gap * 3.2); }
-        ctx.stroke();
-
-        // notehead — filled for short notes, hollow for half/whole (dur >= 2)
-        ctx.save();
-        ctx.translate(n.x, y); ctx.rotate(-0.32);
-        ctx.beginPath(); ctx.ellipse(0, 0, noteRx, noteRy, 0, 0, 7);
-        if ((n.dur || 1) >= 2) { ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke(); }
-        else { ctx.fillStyle = color; ctx.fill(); }
-        ctx.restore();
+        drawNoteShape(ctx, n.x, y, gap, color, n.dur, stemUp, noteRx, noteRy, gap * 3.2);
 
         // active-note name label when hints on
         if (isActive && this.settings.showHints) {
@@ -583,16 +628,7 @@
           ctx.fillText(glyph, n.x - noteRx - 3, y);
         }
         const stemUp = step < homeMiddle;
-        ctx.strokeStyle = color; ctx.lineWidth = 2;
-        ctx.beginPath();
-        if (stemUp) { ctx.moveTo(n.x + noteRx - 0.5, y); ctx.lineTo(n.x + noteRx - 0.5, y - gap * 3); }
-        else { ctx.moveTo(n.x - noteRx + 0.5, y); ctx.lineTo(n.x - noteRx + 0.5, y + gap * 3); }
-        ctx.stroke();
-        ctx.save(); ctx.translate(n.x, y); ctx.rotate(-0.32);
-        ctx.beginPath(); ctx.ellipse(0, 0, noteRx, noteRy, 0, 0, 7);
-        if ((n.dur || 1) >= 2) { ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke(); }
-        else { ctx.fillStyle = color; ctx.fill(); }
-        ctx.restore();
+        drawNoteShape(ctx, n.x, y, gap, color, n.dur, stemUp, noteRx, noteRy, gap * 3);
 
         if (isActive && this.settings.showHints) {
           ctx.fillStyle = STAFF.noteActive; ctx.font = `700 ${gap * 1.05}px ui-sans-serif,system-ui`;
