@@ -29,9 +29,11 @@
   const CLEAR_FRAC = 0.85;          // speed up only once the nearest note sits past this
                                     // fraction of the read zone (the screen is cleared)
   const LEAD_TAU = 0.8;              // s: smoothing of the lead signal (gradual)
-  const DOWN_RATE = 2.2;             // tempo slow-down rate (firm — avoid the miss barrage)
+  const DOWN_RATE = 3.0;             // max slow-down rate, reached only AT the play line
+  const DOWN_EXP = 2;                // quadratic curve: gentle for mild lag, firm only when
+                                     // a note is about to cross (avoids the dramatic yank)
   const UP_RATE = 0.22;              // tempo speed-up rate (gentle — gradual catch-up)
-  const MISS_SLOW = 0.8;             // extra tempo cut on a missed note
+  const MISS_SLOW = 0.9;             // extra tempo cut on a missed note (gentle dip)
   const TEMPO_MIN = 0.12, TEMPO_MAX = 4.0; // beats/sec bounds
   // "lick" rhythm patterns (in quarter-note beats) used for random / generated
   // notes and any lick that doesn't carry its own rhythm.
@@ -290,7 +292,8 @@
       if (this.clock === null) this.clock = -Math.min(aheadBeats, 2.5); // short lead-in
 
       // lead = how far the nearest unread note is from the play line (beats).
-      // Deadband controller: slow (hard) when a note crowds the play line; hold
+      // Deadband controller: slow (gently for mild lag, firmly only as a note nears
+      // the play line — a quadratic curve, so no dramatic yank); hold
       // steady through the comfortable middle; speed up (gently) ONLY once the
       // player has cleared the whole queue — the nearest note has scrolled off to
       // the far-right sliver of the read zone (or none are left). That way a
@@ -302,7 +305,7 @@
       // "cleared" = nearest note past CLEAR_FRAC of the read zone (screenBeats = aheadBeats-1)
       const clearLead = (aheadBeats - 1) * CLEAR_FRAC + 1;
       let rate = 0;
-      if (this._leadEMA < CROWD_LEAD) rate = -DOWN_RATE * (1 - this._leadEMA / CROWD_LEAD);
+      if (this._leadEMA < CROWD_LEAD) rate = -DOWN_RATE * Math.pow(1 - this._leadEMA / CROWD_LEAD, DOWN_EXP);
       else if (this._leadEMA > clearLead) rate = UP_RATE; // screen cleared → gradual catch-up
       this.tempo = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, this.tempo * Math.exp(rate * dt)));
 
