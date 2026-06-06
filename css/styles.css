@@ -172,3 +172,17 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
 #rotate p { color: var(--muted); margin: 0; }
 @keyframes rock { 0%,100% { transform: rotate(0); } 50% { transform: rotate(90deg); } }
 @media (orientation: portrait) and (max-width: 920px) { #rotate { display: grid; } }
+
+/* ---- menu footer / buy me a coffee ---- */
+.menu-footer { margin: 26px 0 8px; text-align: center; }
+.coffee-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 20px; border-radius: 999px;
+  background: linear-gradient(180deg, #ffd560, #ffb02e);
+  color: #3a2600; font-weight: 800; font-size: 15px;
+  text-decoration: none; box-shadow: 0 4px 14px rgba(255,176,46,.32);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.coffee-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(255,176,46,.45); }
+.coffee-btn:active { transform: translateY(0); }
+.menu-footer .credit { margin-top: 10px; color: var(--muted); font-size: 12px; }

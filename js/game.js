@@ -12,7 +12,14 @@
 
   // Tempo presets (BPM). Scroll speed derives from BPM × pixels-per-beat, so
   // horizontal spacing reflects each note's rhythmic duration.
-  const BPM_PRESETS = { relaxed: 54, steady: 76, brisk: 104, intense: 138 };
+  // Read speed = target NOTE ONSETS PER SECOND (not BPM). The effective tempo is
+  // normalised by each tune's average note duration, so dense tunes auto-slow to
+  // hit the same notes/second — i.e. a steady stream of ~1 note/s regardless of
+  // whether the tune is in eighths or quarters.
+  const NPS_PRESETS = { relaxed: 0.2, steady: 1, brisk: 2, intense: 4 }; // notes/sec
+  // average on-screen spacing between consecutive notes (px), scaled to width.
+  const NOTE_SPACING_FRAC = 0.2;     // ~5 notes visible across the staff
+  const PHRASE_GAP_UNITS = 1.5;      // extra blank note-slots between phrases
   // "lick" rhythm patterns (in quarter-note beats) used for random / generated
   // notes and any lick that doesn't carry its own rhythm.
   const RHYTHM_PATTERNS = [
@@ -20,6 +27,7 @@
     [1.5, 0.5], [1, 1, 0.5, 0.5], [0.5, 0.5, 1, 1], [2, 1, 1], [1, 1, 2],
     [2, 2], [1, 0.5, 0.5, 1], [0.5, 1, 0.5, 1, 1],
   ];
+  const PATTERN_AVG_DUR = RHYTHM_PATTERNS.flat().reduce((a, b) => a + b, 0) / RHYTHM_PATTERNS.flat().length;
 
   class Game {
     constructor() {
@@ -45,7 +53,8 @@
       this.currentLickName = '';
       this.currentLickSource = '';
       this._beatPos = 0;             // cumulative beats (for bar lines)
-      this._gapBeats = 1;            // beats until the next note spawns
+      this._gapUnits = 1;            // note-slots until the next spawn (× spacing)
+      this._avgDur = PATTERN_AVG_DUR; // avg note duration of current tune
       this._rhythmBuf = [];          // streamed rhythm pattern
     }
 
@@ -54,7 +63,6 @@
       if (!m) return 4;
       return (+m[1]) * 4 / (+m[2]); // bar length in quarter-note beats
     }
-    _phraseRestBeats() { return 2; }
     _nextDur() {
       if (!this._rhythmBuf.length) this._rhythmBuf = RHYTHM_PATTERNS[(Math.random() * RHYTHM_PATTERNS.length) | 0].slice();
       return this._rhythmBuf.shift();
@@ -147,10 +155,15 @@
       }
       const semis = this.settings.randomKey ? this._randSemis() : 0;
       const notes = App.Licks.transposeToInstrument(baseNotes, this.instrument, semis);
-      const durs = (baseDurs && baseDurs.length === baseNotes.length) ? baseDurs : null;
+      // fixed duration array for the whole phrase (real rhythm, or generated)
+      const durs = (baseDurs && baseDurs.length === baseNotes.length)
+        ? baseDurs : notes.map(() => this._nextDur());
+      // tune's average duration drives the tempo normalisation (dense → slower)
+      const mean = durs.reduce((a, b) => a + b, 0) / (durs.length || 1);
+      this._avgDur = Math.max(0.25, Math.min(4, mean));
       const source = l.source + (semis ? ' · transposed' : '');
       notes.forEach((n, i) => this.queue.push({
-        note: n, dur: durs ? durs[i] : this._nextDur(),
+        note: n, dur: durs[i] || 1,
         phraseStart: i === 0,
         lickName: i === 0 ? l.name : null, lickSource: i === 0 ? source : null,
       }));
@@ -171,7 +184,9 @@
       this.notes.push({ note: item.note, x: 0, spawnedRight: true, dur, barline: onBar });
       this._beatPos += dur;
       const next = this.queue[0];
-      this._gapBeats = dur + (next && next.phraseStart ? this._phraseRestBeats() : 0);
+      // gap to next onset in "note-slot" units: this note's relative length plus
+      // an inter-phrase rest. × NOTE_SPACING px (set in update) gives the distance.
+      this._gapUnits = (dur / this._avgDur) + (next && next.phraseStart ? PHRASE_GAP_UNITS : 0);
     }
 
     get active() { return this.notes.length ? this.notes[0] : null; }
@@ -188,10 +203,12 @@
       this.lastTime = now;
       if (dt > 0.1) dt = 0.1; // clamp after tab switch
 
-      const bpm = BPM_PRESETS[this.settings.speed] || 76;
-      const beatPx = Math.max(46, Math.min(96, rect.w * 0.095));
-      this._beatPx = beatPx;
-      const v = beatPx * bpm / 60; // px per second
+      // notes/second target → constant scroll velocity = spacing × notes-per-sec.
+      // (Average onset rate = nps regardless of the tune's note density.)
+      const nps = NPS_PRESETS[this.settings.speed] || 1;
+      const spacing = Math.max(120, Math.min(260, rect.w * NOTE_SPACING_FRAC));
+      this._spacing = spacing;
+      const v = spacing * nps; // px per second
       const px = v * dt;
       const rightEdge = rect.x + rect.w + 24;
       const missX = this._missX(rect);
@@ -214,11 +231,11 @@
         }
       }
 
-      // spawn cadence by rhythmic duration (gap = beats × pixels-per-beat)
+      // spawn cadence: distance to next note = gap-units × spacing
       if (this.status === 'playing') {
         this.spawnAcc += px;
         this._refillQueue();
-        const requiredPx = (this._gapBeats || 1) * beatPx;
+        const requiredPx = (this._gapUnits || 1) * spacing;
         if (this.spawnAcc >= requiredPx) { this.spawnAcc -= requiredPx; this._spawn(); }
       }
 
@@ -446,5 +463,5 @@
   }
 
   App.Game = Game;
-  App.BPM_PRESETS = BPM_PRESETS;
+  App.NPS_PRESETS = NPS_PRESETS;
 })(window.App = window.App || {});
