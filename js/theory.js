@@ -82,17 +82,74 @@
     return makeNote(nm[0], oct, nm.length > 1 ? 1 : 0);
   }
 
+  // --- Key signatures ------------------------------------------------------
+  const SHARP_ORDER = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
+  const FLAT_ORDER = ['B', 'E', 'A', 'D', 'G', 'C', 'F'];
+  const MAJOR_TONIC = { '-7': 'Cb', '-6': 'Gb', '-5': 'Db', '-4': 'Ab', '-3': 'Eb', '-2': 'Bb', '-1': 'F', 0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', 6: 'F#', 7: 'C#' };
+  function keySig(fifths) {
+    const accMap = {}; const order = [];
+    if (fifths > 0) for (let i = 0; i < fifths && i < 7; i++) { accMap[SHARP_ORDER[i]] = 1; order.push({ letter: SHARP_ORDER[i], acc: 1 }); }
+    else if (fifths < 0) for (let i = 0; i < -fifths && i < 7; i++) { accMap[FLAT_ORDER[i]] = -1; order.push({ letter: FLAT_ORDER[i], acc: -1 }); }
+    return { fifths, accMap, order };
+  }
+  function keyName(fifths) { return (MAJOR_TONIC[fifths] || 'C') + ' major'; }
+  const pcOf = (letter, acc) => (((LETTER_SEMITONE[letter] + acc) % 12) + 12) % 12;
+  // map pitch-class -> diatonic {letter,acc} for a key
+  function diatonicMap(accMap) {
+    const m = {};
+    for (const L of LETTERS) { const a = accMap[L] || 0; m[pcOf(L, a)] = { letter: L, acc: a }; }
+    return m;
+  }
+  function octForLetter(midi, letter, acc) {
+    return Math.round((midi - LETTER_SEMITONE[letter] - acc) / 12) - 1;
+  }
+  const FLAT_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+  // Spell a MIDI note within a key: diatonic notes keep the key's spelling (so the
+  // key signature covers them); chromatic notes get an accidental (flats in flat
+  // keys, sharps otherwise).
+  function spellMidiInKey(midi, fifths) {
+    const { accMap } = keySig(fifths);
+    const dia = diatonicMap(accMap);
+    const pc = ((midi % 12) + 12) % 12;
+    if (dia[pc]) { const d = dia[pc]; return makeNote(d.letter, octForLetter(midi, d.letter, d.acc), d.acc); }
+    const nm = (fifths < 0 ? FLAT_NAMES : SHARP_NAMES)[pc];
+    const letter = nm[0], acc = nm.length > 1 ? (fifths < 0 ? -1 : 1) : 0;
+    return makeNote(letter, octForLetter(midi, letter, acc), acc);
+  }
+  // Pick the key signature (fifths -6..+6) that makes the most notes diatonic.
+  function estimateFifths(midis) {
+    let best = 0, bestCost = 1e9;
+    for (let k = -6; k <= 6; k++) {
+      const dia = diatonicMap(keySig(k).accMap);
+      let cost = 0;
+      for (const m of midis) if (!dia[((m % 12) + 12) % 12]) cost++;
+      cost += Math.abs(k) * 0.3; // tie-break toward simpler keys
+      if (cost < bestCost) { bestCost = cost; best = k; }
+    }
+    return best;
+  }
+
   App.Theory = {
     LETTERS,
     makeNote,
     parseNote,
     spellMidi,
+    spellMidiInKey,
     midiOf,
     stepOf,
     naturalsInRange,
     sharpsInRange,
+    keySig,
+    keyName,
+    estimateFifths,
     CLEFS,
     // freq in Hz for a MIDI note (A4 = 440)
     freqOf(midi) { return 440 * Math.pow(2, (midi - 69) / 12); },
+    // detected freq -> nearest midi + cents deviation (for the tuner)
+    centsOff(freq) {
+      const midi = Math.round(69 + 12 * Math.log2(freq / 440));
+      const ref = 440 * Math.pow(2, (midi - 69) / 12);
+      return { midi, cents: Math.round(1200 * Math.log2(freq / ref)) };
+    },
   };
 })(window.App = window.App || {});

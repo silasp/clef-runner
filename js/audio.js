@@ -65,10 +65,31 @@
     o.stop(t + 0.24);
   }
 
+  // Metronome click — short filtered blip; higher/louder on the downbeat.
+  function tick(accent) {
+    if (!enabled) return;
+    const c = ensureCtx();
+    if (!c) return;
+    const t = c.currentTime;
+    const g = c.createGain();
+    g.connect(master);
+    const peak = accent ? 0.5 : 0.28;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    const o = c.createOscillator();
+    o.type = 'square';
+    o.frequency.value = accent ? 2000 : 1400;
+    o.connect(g);
+    o.start(t);
+    o.stop(t + 0.06);
+  }
+
   App.Audio = {
     unlock() { ensureCtx(); },
     playMidi,
     playError,
+    tick,
     setEnabled(v) { enabled = !!v; },
     isEnabled() { return enabled; },
   };

@@ -16,7 +16,7 @@
   // normalised by each tune's average note duration, so dense tunes auto-slow to
   // hit the same notes/second — i.e. a steady stream of ~1 note/s regardless of
   // whether the tune is in eighths or quarters.
-  const NPS_PRESETS = { relaxed: 0.2, steady: 1, brisk: 2, intense: 4 }; // notes/sec
+  const NPS_PRESETS = { relaxed: 0.25, steady: 0.5, brisk: 1, intense: 2 }; // notes/sec
   // average on-screen spacing between consecutive notes (px), scaled to width.
   const NOTE_SPACING_FRAC = 0.2;     // ~5 notes visible across the staff
   const PHRASE_GAP_UNITS = 1.5;      // extra blank note-slots between phrases
@@ -28,6 +28,25 @@
     [2, 2], [1, 0.5, 0.5, 1], [0.5, 1, 0.5, 1, 1],
   ];
   const PATTERN_AVG_DUR = RHYTHM_PATTERNS.flat().reduce((a, b) => a + b, 0) / RHYTHM_PATTERNS.flat().length;
+
+  // staff positions (letter, octave) for key-signature accidentals, in circle-of-
+  // fifths order, per clef.
+  const KS_TREBLE = { sharp: [['F', 5], ['C', 5], ['G', 5], ['D', 5], ['A', 4], ['E', 5], ['B', 4]], flat: [['B', 4], ['E', 5], ['A', 4], ['D', 5], ['G', 4], ['C', 5], ['F', 4]] };
+  const KS_BASS = { sharp: [['F', 3], ['C', 3], ['G', 3], ['D', 3], ['A', 2], ['E', 3], ['B', 2]], flat: [['B', 2], ['E', 3], ['A', 2], ['D', 3], ['G', 2], ['C', 3], ['F', 2]] };
+  function drawKeySig(ctx, fifths, ks, x0, dx, yFor, gap, color) {
+    if (!fifths) return;
+    const arr = fifths > 0 ? ks.sharp : ks.flat;
+    const n = Math.min(Math.abs(fifths), 7);
+    ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `${gap * 2.4}px "Bravura","Noto Music",serif`;
+    for (let i = 0; i < n; i++) ctx.fillText(fifths > 0 ? '♯' : '♭', x0 + i * dx, yFor(T.stepOf(arr[i][0], arr[i][1])));
+  }
+  // glyph for a note's accidental relative to a key signature (null = none shown)
+  function accidentalGlyph(accidental, keyAcc) {
+    if (accidental === keyAcc) return null;        // covered by key signature
+    if (accidental === 0) return '♮';              // natural cancels a key accidental
+    return accidental === 1 ? '♯' : '♭';
+  }
 
   class Game {
     constructor() {
@@ -56,6 +75,8 @@
       this._gapUnits = 1;            // note-slots until the next spawn (× spacing)
       this._avgDur = PATTERN_AVG_DUR; // avg note duration of current tune
       this._rhythmBuf = [];          // streamed rhythm pattern
+      this.key = T.keySig(0);        // current key signature (C major)
+      this._metroBeats = 0;          // real-time beat accumulator (metronome)
     }
 
     _barBeats() {
@@ -74,6 +95,13 @@
       const clefName = instrument.def.clef;
       this.clef = clefName === 'grand' ? { grand: true } : T.CLEFS[clefName];
       this.mode = this.settings.mode || 'random';
+      // random mode: optionally a random key signature (else C major)
+      if (this.mode === 'random') {
+        const fifths = this.settings.randomKey ? ([-4, -3, -2, -1, 0, 1, 2, 3, 4][(Math.random() * 9) | 0]) : 0;
+        this.key = T.keySig(fifths);
+      } else {
+        this.key = T.keySig(0);
+      }
       this._buildPool();
       if (this.mode === 'licks') this._loadGenre(this.settings.genre);
     }
@@ -91,19 +119,30 @@
     }
 
     _buildPool() {
-      const all = this.instrument.naturals;
-      const d = this.settings.difficulty;
-      if (d === 'easy') {
-        // central ~octave of naturals — fewest ledger lines
-        const mid = Math.floor(all.length / 2);
-        const span = 4;
-        this.pool = all.slice(Math.max(0, mid - span), mid + span + 1);
-      } else if (d === 'hard') {
-        this.pool = this.instrument.allNotes.slice(); // include sharps
-      } else {
-        this.pool = all.slice(); // medium: all naturals
+      // build the random-note pool in the current key: diatonic notes (covered by
+      // the key signature, no accidental) plus, on harder settings, chromatic
+      // notes that render with an accidental or natural.
+      const inst = this.instrument;
+      const fifths = this.key ? this.key.fifths : 0;
+      const accMap = this.key ? this.key.accMap : {};
+      const dia = [], chrom = [];
+      for (let m = inst.minMidi; m <= inst.maxMidi; m++) {
+        if (!inst.reachable.has(m)) continue;
+        const n = T.spellMidiInKey(m, fifths);
+        if (n.accidental === (accMap[n.letter] || 0)) dia.push(n); else chrom.push(n);
       }
-      if (this.pool.length < 2) this.pool = all.slice();
+      const d = this.settings.difficulty;
+      let pool;
+      if (d === 'easy') {
+        const mid = Math.floor(dia.length / 2); const span = 4;
+        pool = dia.slice(Math.max(0, mid - span), mid + span + 1);
+      } else if (d === 'hard') {
+        pool = dia.concat(chrom);            // accidentals/naturals appear freely
+      } else {
+        pool = dia.concat(chrom.filter(() => Math.random() < 0.22)); // occasional accidentals
+      }
+      this.pool = pool.length >= 2 ? pool : dia.slice();
+      if (this.pool.length < 2) this.pool = inst.naturals.slice();
     }
 
     start() {
@@ -136,7 +175,7 @@
       if (this.mode === 'licks') {
         if (this.queue.length === 0) this._loadNextLick();
       } else {
-        while (this.queue.length < 2) this.queue.push({ note: this._randNote(), dur: this._nextDur() });
+        while (this.queue.length < 2) this.queue.push({ note: this._randNote(), dur: this._nextDur(), fifths: this.key.fifths });
       }
     }
 
@@ -154,7 +193,13 @@
         baseDurs = l._d.split(',').map((x) => +x / (l._res || 4));
       }
       const semis = this.settings.randomKey ? this._randSemis() : 0;
-      const notes = App.Licks.transposeToInstrument(baseNotes, this.instrument, semis);
+      const transposed = App.Licks.transposeToInstrument(baseNotes, this.instrument, semis);
+      // pick the key signature that best fits this phrase, then respell every note
+      // in that key so the key signature covers the diatonic notes.
+      const midis = transposed.map((n) => n.midi);
+      const fifths = T.estimateFifths(midis);
+      this.key = T.keySig(fifths);
+      const notes = midis.map((m) => T.spellMidiInKey(m, fifths));
       // fixed duration array for the whole phrase (real rhythm, or generated)
       const durs = (baseDurs && baseDurs.length === baseNotes.length)
         ? baseDurs : notes.map(() => this._nextDur());
@@ -163,7 +208,7 @@
       this._avgDur = Math.max(0.25, Math.min(4, mean));
       const source = l.source + (semis ? ' · transposed' : '');
       notes.forEach((n, i) => this.queue.push({
-        note: n, dur: durs[i] || 1,
+        note: n, dur: durs[i] || 1, fifths,
         phraseStart: i === 0,
         lickName: i === 0 ? l.name : null, lickSource: i === 0 ? source : null,
       }));
@@ -181,7 +226,7 @@
       const barBeats = this._barBeats();
       const pos = this._beatPos % barBeats;
       const onBar = this._beatPos > 1e-6 && (pos < 1e-4 || barBeats - pos < 1e-4);
-      this.notes.push({ note: item.note, x: 0, spawnedRight: true, dur, barline: onBar });
+      this.notes.push({ note: item.note, x: 0, spawnedRight: true, dur, barline: onBar, fifths: item.fifths != null ? item.fifths : (this.key ? this.key.fifths : 0) });
       this._beatPos += dur;
       const next = this.queue[0];
       // gap to next onset in "note-slot" units: this note's relative length plus
@@ -215,8 +260,17 @@
 
       // newly spawned notes start at the right edge
       this.notes.forEach((n) => { if (n.spawnedRight) { n.x = rightEdge; n.spawnedRight = false; } });
-      // move all left
-      this.notes.forEach((n) => { n.x -= px; });
+      // move notes left; once past the halfway point they decelerate toward the
+      // play line (more reading time near the clear point) but never stall.
+      const mid = rect.x + rect.w * 0.5;
+      this.notes.forEach((n) => {
+        let f = 1;
+        if (n.x < mid) {
+          const t = (n.x - missX) / Math.max(1, mid - missX); // 1 at midpoint → 0 at play line
+          f = 0.4 + 0.6 * Math.max(0, Math.min(1, t));         // 100% → 40% speed
+        }
+        n.x -= px * f;
+      });
 
       // miss: leftmost crossed the play line
       while (this.notes.length && this.notes[0].x <= missX) {
@@ -228,6 +282,16 @@
         if (this.settings.livesMode) {
           this.lives--;
           if (this.lives <= 0) { this.status = 'over'; events.push({ type: 'gameover' }); }
+        }
+      }
+
+      // metronome: real-time beat clock at the tune's tempo (avgDur × notes/sec)
+      if (this.status === 'playing') {
+        const beatsPerSec = (this._avgDur || 1) * nps;
+        const prevB = Math.floor(this._metroBeats);
+        this._metroBeats += dt * beatsPerSec;
+        if (Math.floor(this._metroBeats) > prevB) {
+          events.push({ type: 'beat', accent: (Math.floor(this._metroBeats) % this._barBeats()) === 0 });
         }
       }
 
@@ -251,7 +315,13 @@
     }
 
     _missX(rect) { return rect.x + this._clefW(rect) + 6; }
-    _clefW(rect) { return Math.min(64, rect.w * 0.12); }
+    // reserve room for the clef + up to 4 key-signature accidentals (fixed, so
+    // the play line stays put even as the key changes between phrases).
+    _clefW(rect) {
+      const gap = Math.max(9, Math.min(20, rect.h / 11));
+      return Math.min(rect.w * 0.36, gap * 3.2 + 4 * gap * 0.95 + 8);
+    }
+    _sigFifths() { return this.active && this.active.fifths != null ? this.active.fifths : (this.key ? this.key.fifths : 0); }
 
     // midi: returns {result:'good'|'bad', note, expected?, multiplier?}
     handleTap(midi) {
@@ -323,7 +393,11 @@
       ctx.fillStyle = STAFF.clef;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = `${gap * 5.2}px "Bravura","Noto Music",serif`;
-      ctx.fillText(this.clef.glyph, rect.x + clefW * 0.55, middleY + (this.clef === T.CLEFS.treble ? gap * 0.4 : -gap * 0.2));
+      ctx.fillText(this.clef.glyph, rect.x + gap * 1.7, middleY + (this.clef === T.CLEFS.treble ? gap * 0.4 : -gap * 0.2));
+
+      // key signature
+      const ks = this.clef === T.CLEFS.bass ? KS_BASS : KS_TREBLE;
+      drawKeySig(ctx, this._sigFifths(), ks, rect.x + gap * 3.4, gap * 0.95, yFor, gap, STAFF.clef);
 
       // notes
       const noteRx = gap * 0.62, noteRy = gap * 0.5;
@@ -350,12 +424,14 @@
         if (step > top) for (let L = top + 2; L <= step; L += 2) drawLedger(L);
         if (step < bot) for (let L = bot - 2; L >= step; L -= 2) drawLedger(L);
 
-        // accidental
-        if (n.note.accidental) {
+        // accidental — only when it differs from the note's key signature
+        const keyAcc = T.keySig(n.fifths || 0).accMap[n.note.letter] || 0;
+        const glyph = accidentalGlyph(n.note.accidental, keyAcc);
+        if (glyph) {
           ctx.fillStyle = color;
           ctx.font = `${gap * 1.9}px serif`;
           ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-          ctx.fillText(n.note.accidental === 1 ? '♯' : '♭', n.x - noteRx - 3, y);
+          ctx.fillText(glyph, n.x - noteRx - 3, y);
         }
 
         // stem (up if below middle line, else down)
@@ -410,8 +486,12 @@
 
       ctx.fillStyle = STAFF.clef; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = `${gap * 4.4}px "Bravura","Noto Music",serif`;
-      ctx.fillText(T.CLEFS.treble.glyph, rect.x + clefW * 0.6, yFor(34) + gap * 0.4);
-      ctx.fillText(T.CLEFS.bass.glyph, rect.x + clefW * 0.6, yFor(22) - gap * 0.2);
+      ctx.fillText(T.CLEFS.treble.glyph, rect.x + gap * 2.0, yFor(34) + gap * 0.4);
+      ctx.fillText(T.CLEFS.bass.glyph, rect.x + gap * 2.0, yFor(22) - gap * 0.2);
+      // key signature on both staves
+      const sf = this._sigFifths();
+      drawKeySig(ctx, sf, KS_TREBLE, rect.x + gap * 3.8, gap * 0.95, yFor, gap, STAFF.clef);
+      drawKeySig(ctx, sf, KS_BASS, rect.x + gap * 3.8, gap * 0.95, yFor, gap, STAFF.clef);
 
       const noteRx = gap * 0.62, noteRy = gap * 0.5;
       this.notes.forEach((n, i) => {
@@ -436,10 +516,12 @@
         if (step > topL) for (let L = topL + 2; L <= step; L += 2) drawLedger(L);
         if (step < botL) for (let L = botL - 2; L >= step; L -= 2) drawLedger(L);
 
-        if (n.note.accidental) {
+        const keyAcc = T.keySig(n.fifths || 0).accMap[n.note.letter] || 0;
+        const glyph = accidentalGlyph(n.note.accidental, keyAcc);
+        if (glyph) {
           ctx.fillStyle = color; ctx.font = `${gap * 1.9}px serif`;
           ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-          ctx.fillText(n.note.accidental === 1 ? '♯' : '♭', n.x - noteRx - 3, y);
+          ctx.fillText(glyph, n.x - noteRx - 3, y);
         }
         const stemUp = step < homeMiddle;
         ctx.strokeStyle = color; ctx.lineWidth = 2;

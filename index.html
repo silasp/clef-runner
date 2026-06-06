@@ -24,6 +24,7 @@
             <h1>Clef Runner</h1>
             <div class="tagline">Read the notes before they fall off the edge.</div>
           </div>
+          <a class="coffee-btn" href="https://www.paypal.com/ncp/payment/JF4TU78UNV74J" target="_blank" rel="noopener noreferrer" title="Support development">☕ Buy me a coffee</a>
         </div>
 
         <div class="section-title">Choose your instrument</div>
@@ -90,11 +91,15 @@
           </div>
           <div class="setting">
             <div class="row"><label>Random key</label><button class="toggle" id="tglRandomKey" aria-label="Toggle random key"></button></div>
-            <div class="desc">Transpose each lick to a random key (Licks mode)</div>
+            <div class="desc">Random key signature — transposes licks, and picks a key for random notes</div>
+          </div>
+          <div class="setting">
+            <div class="row"><label>Metronome</label><button class="toggle" id="tglMetro" aria-label="Toggle metronome"></button></div>
+            <div class="desc">Click on each quarter-note beat (accent on the bar)</div>
           </div>
           <div class="setting">
             <div class="row"><label>Play along (mic)</label><button class="toggle" id="tglMic" aria-label="Toggle microphone"></button></div>
-            <div class="desc">Detect your instrument's pitch from the mic · needs https or localhost</div>
+            <div class="desc">Detect your instrument's pitch from the mic · needs https or localhost · shows a tuner</div>
           </div>
         </div>
 
@@ -107,8 +112,7 @@
         <div class="board" id="leaderboard"></div>
 
         <footer class="menu-footer">
-          <a class="coffee-btn" href="https://www.paypal.com/ncp/payment/JF4TU78UNV74J" target="_blank" rel="noopener noreferrer">☕ Buy me a coffee</a>
-          <div class="credit">Clef Runner · enjoying it? support development</div>
+          <div class="credit">Clef Runner · enjoying it? ☕ support is up top ↗</div>
         </footer>
       </div>
     </section>
@@ -131,6 +135,11 @@
         <div class="flash good" id="flashGood"></div>
         <div class="flash bad" id="flashBad"></div>
         <div class="popup" id="popup"></div>
+        <div id="tuner" class="tuner" style="display:none;">
+          <span id="tunerNote" class="t-note">—</span>
+          <div class="t-bar"><span class="t-center"></span><span id="tunerNeedle" class="t-needle"></span></div>
+          <span id="tunerCents" class="t-cents"></span>
+        </div>
       </div>
 
       <div id="instrumentWrap">

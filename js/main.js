@@ -15,7 +15,7 @@
 
   const state = {
     inst: 'piano',
-    settings: { mode: 'random', genre: 'blues', difficulty: 'medium', speed: 'steady', clef: 'treble', showHints: false, sound: true, livesMode: false, randomKey: false, timeSig: '4/4', mic: false },
+    settings: { mode: 'random', genre: 'blues', difficulty: 'medium', speed: 'steady', clef: 'treble', showHints: false, sound: true, livesMode: false, randomKey: false, timeSig: '4/4', mic: false, metronome: false },
   };
   const micState = { lastFire: null, stableMidi: null, stableCount: 0, silentFrames: 0, armed: true, frame: 0 };
   let game = new App.Game();
@@ -99,6 +99,7 @@
   function handleEvent(ev) {
     if (ev.type === 'miss') { flashScreen('bad'); if (state.settings.sound) App.Audio.playError(); updateLives(); }
     else if (ev.type === 'gameover') endGame();
+    else if (ev.type === 'beat') { if (state.settings.metronome && state.settings.sound) App.Audio.tick(ev.accent); }
   }
 
   // ---- input --------------------------------------------------------------
@@ -135,10 +136,11 @@
     const p = App.Pitch.detect();
     if (!p || p.midi == null) {
       micState.silentFrames++;
-      if (micState.silentFrames > 2) { micState.armed = true; micState.stableMidi = null; micState.stableCount = 0; }
+      if (micState.silentFrames > 2) { micState.armed = true; micState.stableMidi = null; micState.stableCount = 0; updateTuner(null); }
       return;
     }
     micState.silentFrames = 0;
+    updateTuner(p.freq);
     if (p.midi === micState.stableMidi) micState.stableCount++;
     else { micState.stableMidi = p.midi; micState.stableCount = 1; }
     if (micState.stableCount === 2 && (micState.armed || p.midi !== micState.lastFire)) {
@@ -159,6 +161,18 @@
     try { await App.Pitch.start(); return true; }
     catch (e) { return false; }
   }
+  const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+  function updateTuner(freq) {
+    const el = $('tuner'); if (!el) return;
+    if (!freq) { el.classList.remove('lit'); $('tunerNote').textContent = '—'; $('tunerCents').textContent = ''; $('tunerNeedle').style.left = '50%'; return; }
+    const { midi, cents } = App.Theory.centsOff(freq);
+    el.classList.add('lit');
+    el.classList.toggle('intune', Math.abs(cents) <= 12);
+    $('tunerNote').textContent = NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
+    $('tunerCents').textContent = (cents > 0 ? '+' : '') + cents + '¢';
+    $('tunerNeedle').style.left = Math.max(2, Math.min(98, 50 + cents)) + '%';
+  }
+  function showTuner(on) { const el = $('tuner'); if (el) el.style.display = on ? 'flex' : 'none'; if (on) updateTuner(null); }
 
   // ---- feedback -----------------------------------------------------------
   function flashScreen(kind) {
@@ -382,6 +396,7 @@
     renderToggle('tglSound', state.settings.sound);
     renderToggle('tglLives', state.settings.livesMode);
     renderToggle('tglRandomKey', state.settings.randomKey);
+    renderToggle('tglMetro', state.settings.metronome);
     renderToggle('tglMic', state.settings.mic);
     renderAccount();
     renderLeaderboard();
@@ -405,6 +420,7 @@
     bindToggle('tglSound', () => { state.settings.sound = !state.settings.sound; App.Audio.setEnabled(state.settings.sound); renderToggle('tglSound', state.settings.sound); });
     bindToggle('tglLives', () => { state.settings.livesMode = !state.settings.livesMode; renderToggle('tglLives', state.settings.livesMode); });
     bindToggle('tglRandomKey', () => { state.settings.randomKey = !state.settings.randomKey; renderToggle('tglRandomKey', state.settings.randomKey); });
+    bindToggle('tglMetro', () => { state.settings.metronome = !state.settings.metronome; renderToggle('tglMetro', state.settings.metronome); });
     $('tglMic').onclick = async () => {
       if (!state.settings.mic) {
         const ok = await enableMic();
@@ -414,6 +430,7 @@
         App.Pitch.stop();
         state.settings.mic = false;
       }
+      showTuner(state.settings.mic);
       renderToggle('tglMic', state.settings.mic);
       saveSettings();
     };
@@ -462,17 +479,30 @@
   // debug accessor (harmless): inspect live game/instrument from the console
   App.debug = { game: () => game, instrument: () => instrument };
 
+  function datasetLabel(src) {
+    src = src || '';
+    if (/thesession/i.test(src)) return 'thesession.org';
+    if (/Nottingham/i.test(src)) return 'Nottingham DB';
+    if (/Weimar/i.test(src)) return 'Weimar Jazz DB';
+    if (/OpenEWLD/i.test(src)) return 'OpenEWLD';
+    if (/POP909/i.test(src)) return 'POP909';
+    if (/ADL/i.test(src)) return 'ADL piano';
+    if (/generated/i.test(src)) return 'generated licks';
+    return 'curated licks';
+  }
+  // Show the ACTUAL source datasets for the selected genre (not all thesession!).
   function updateFolkStatus() {
     const el = $('folkStatus');
     if (!el) return;
     const g = state.settings.genre;
-    const parts = [];
-    if (g === 'folk' && App.FolkTunes && App.FolkTunes.count()) parts.push(App.FolkTunes.count().toLocaleString() + ' Nottingham');
-    if (App.Songs && App.Songs.has(g)) {
-      if (App.Songs.loaded(g)) parts.push(App.Songs.count(g).toLocaleString() + ' thesession.org');
-      else parts.push('loading thesession.org tunes…');
-    }
-    el.textContent = parts.length ? '♪ ' + parts.join(' + ') + ' tunes' : '';
+    if (App.Songs && App.Songs.has(g) && !App.Songs.loaded(g)) { el.textContent = 'Loading tunes…'; return; }
+    let pool = [];
+    try { pool = App.Licks ? App.Licks.get(g) : []; } catch (e) {}
+    if (g === 'folk' && App.FolkTunes) pool = pool.concat(App.FolkTunes.tunes());
+    if (!pool.length) { el.textContent = ''; return; }
+    const seen = new Set(), order = [];
+    pool.forEach((l) => { const d = datasetLabel(l.source); if (!seen.has(d)) { seen.add(d); order.push(d); } });
+    el.textContent = 'Sources: ' + order.join(', ') + ' · ' + pool.length.toLocaleString() + ' items';
   }
 
   function boot() {
