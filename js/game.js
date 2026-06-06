@@ -26,10 +26,11 @@
   const MAX_CLICKS_PER_SEC_GAP = 0.5; // ensure a click at least every 0.5s (>=2/s)
   // adaptive tempo controller (rubber-bands scroll speed to the player's pace)
   const CROWD_LEAD = 2.4;            // beats: below this the nearest note is crowding → slow
-  const IDLE_LEAD = 3.8;             // beats: above this the read zone is empty → speed up
+  const CLEAR_FRAC = 0.85;          // speed up only once the nearest note sits past this
+                                    // fraction of the read zone (the screen is cleared)
   const LEAD_TAU = 0.8;              // s: smoothing of the lead signal (gradual)
   const DOWN_RATE = 2.2;             // tempo slow-down rate (firm — avoid the miss barrage)
-  const UP_RATE = 0.38;              // tempo speed-up rate (gentle)
+  const UP_RATE = 0.22;              // tempo speed-up rate (gentle — gradual catch-up)
   const MISS_SLOW = 0.8;             // extra tempo cut on a missed note
   const TEMPO_MIN = 0.12, TEMPO_MAX = 4.0; // beats/sec bounds
   // "lick" rhythm patterns (in quarter-note beats) used for random / generated
@@ -279,8 +280,8 @@
       if (dt > 0.1) dt = 0.1; // clamp after tab switch
 
       // Musical clock at the play line, advancing at an ADAPTIVE tempo that
-      // rubber-bands to the player's reading pace: it speeds up when the screen
-      // empties (notes cleared) and slows when notes crowd the play line, so it
+      // rubber-bands to the player's reading pace: it slows when notes crowd the
+      // play line, and speeds up only once the screen is fully cleared, so it
       // converges on the player's natural speed. The beat grid stays stationary.
       const pxPerBeat = Math.max(72, Math.min(150, rect.w * BEAT_PX));
       const missX = this._missX(rect);
@@ -289,15 +290,20 @@
       if (this.clock === null) this.clock = -Math.min(aheadBeats, 2.5); // short lead-in
 
       // lead = how far the nearest unread note is from the play line (beats).
-      // Deadband controller: slow (hard) when a note crowds the play line, speed
-      // up (gently) when the read zone empties, hold in between → converges on the
-      // player's pace. Misses (handled below) also slow it. Smoothed for gradual feel.
+      // Deadband controller: slow (hard) when a note crowds the play line; hold
+      // steady through the comfortable middle; speed up (gently) ONLY once the
+      // player has cleared the whole queue — the nearest note has scrolled off to
+      // the far-right sliver of the read zone (or none are left). That way a
+      // comfortable lead alone never accelerates; only an empty screen does.
+      // Misses (handled below) also slow it. Smoothed for a gradual feel.
       const lead = this.notes.length ? Math.max(0, this.notes[0].beat - this.clock) : (aheadBeats + 2);
       const a = 1 - Math.exp(-dt / LEAD_TAU);
       this._leadEMA = this._leadEMA === null ? lead : this._leadEMA + (lead - this._leadEMA) * a;
+      // "cleared" = nearest note past CLEAR_FRAC of the read zone (screenBeats = aheadBeats-1)
+      const clearLead = (aheadBeats - 1) * CLEAR_FRAC + 1;
       let rate = 0;
       if (this._leadEMA < CROWD_LEAD) rate = -DOWN_RATE * (1 - this._leadEMA / CROWD_LEAD);
-      else if (this._leadEMA > IDLE_LEAD) rate = UP_RATE * Math.min(1, (this._leadEMA - IDLE_LEAD) / IDLE_LEAD);
+      else if (this._leadEMA > clearLead) rate = UP_RATE; // screen cleared → gradual catch-up
       this.tempo = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, this.tempo * Math.exp(rate * dt)));
 
       this.clock += dt * this.tempo;
