@@ -131,6 +131,18 @@ button { font-family: inherit; cursor: pointer; }
 .hud .lives { letter-spacing: 2px; font-size: 16px; }
 .hud .icon-btn { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--edge); background: var(--panel); color: var(--text); font-size: 18px; }
 
+/* live tempo control */
+.tempo-ctl { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.tempo-ctl .t-btn {
+  width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--edge);
+  background: var(--panel); color: var(--text); font-size: 18px; font-weight: 800; line-height: 1;
+  display: grid; place-items: center; padding: 0;
+}
+.tempo-ctl .t-btn:active { transform: translateY(1px); background: var(--panel-2); }
+.tempo-ctl .t-readout { display: flex; flex-direction: column; line-height: 1.05; min-width: 56px; text-align: center; }
+.tempo-ctl .t-readout .k { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.tempo-ctl .t-readout .v { font-size: clamp(14px, 3.4vw, 18px); font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+
 #staffWrap { position: relative; flex: 0 0 42%; min-height: 0; background: linear-gradient(180deg, #0e1320, #0b0e15); }
 #instrumentWrap { position: relative; flex: 1; min-height: 0; background: #0a0d13; }
 /* absolute so the canvas pixel buffer never feeds back into flex sizing */
