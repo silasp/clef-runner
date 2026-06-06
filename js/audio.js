@@ -65,21 +65,22 @@
     o.stop(t + 0.24);
   }
 
-  // Metronome click — short filtered blip; higher/louder on the downbeat.
-  function tick(accent) {
+  // Metronome click — bar = loud/high, beat = medium, sub = soft/low.
+  const TICK = { bar: { f: 2000, a: 0.5 }, beat: { f: 1500, a: 0.32 }, sub: { f: 1050, a: 0.14 } };
+  function tick(level) {
     if (!enabled) return;
     const c = ensureCtx();
     if (!c) return;
+    const cfg = TICK[level] || TICK.beat;
     const t = c.currentTime;
     const g = c.createGain();
     g.connect(master);
-    const peak = accent ? 0.5 : 0.28;
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(peak, t + 0.002);
+    g.gain.exponentialRampToValueAtTime(cfg.a, t + 0.002);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
     const o = c.createOscillator();
     o.type = 'square';
-    o.frequency.value = accent ? 2000 : 1400;
+    o.frequency.value = cfg.f;
     o.connect(g);
     o.start(t);
     o.stop(t + 0.06);

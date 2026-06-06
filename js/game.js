@@ -8,6 +8,7 @@
     line: '#cbd2e0', lineDim: 'rgba(203,210,224,0.35)',
     note: '#e8ecf4', noteActive: '#ffd24a', accidental: '#e8ecf4',
     clef: '#aeb6c6', danger: 'rgba(255,93,108,0.18)', playLine: 'rgba(255,93,108,0.55)',
+    barLine: 'rgba(180,190,210,0.55)', beatLine: 'rgba(174,182,198,0.18)',
   };
 
   // Tempo presets (BPM). Scroll speed derives from BPM × pixels-per-beat, so
@@ -17,9 +18,12 @@
   // hit the same notes/second — i.e. a steady stream of ~1 note/s regardless of
   // whether the tune is in eighths or quarters.
   const NPS_PRESETS = { relaxed: 0.25, steady: 0.5, brisk: 1, intense: 2 }; // notes/sec
-  // average on-screen spacing between consecutive notes (px), scaled to width.
-  const NOTE_SPACING_FRAC = 0.2;     // ~5 notes visible across the staff
-  const PHRASE_GAP_UNITS = 1.5;      // extra blank note-slots between phrases
+  // STATIONARY beat ruler: vertical grid lines are fixed; notes scroll across
+  // them. One beat = BEAT_PX_FRAC × width of horizontal travel. Effective tempo
+  // (and thus scroll speed + click rate) = notes/sec × the tune's avg note
+  // duration, so dense tunes auto-slow but still hit the notes/sec target.
+  const BEAT_PX = 0.15;              // beat-line spacing as a fraction of width
+  const MAX_CLICKS_PER_SEC_GAP = 0.5; // ensure a click at least every 0.5s (>=2/s)
   // "lick" rhythm patterns (in quarter-note beats) used for random / generated
   // notes and any lick that doesn't carry its own rhythm.
   const RHYTHM_PATTERNS = [
@@ -47,6 +51,23 @@
     if (accidental === 0) return '♮';              // natural cancels a key accidental
     return accidental === 1 ? '♯' : '♭';
   }
+  // Click subdivision per beat: a power of two giving at least 2 clicks/sec.
+  function clickSubdiv(beatsPerSec) {
+    const beatSec = 1 / Math.max(0.01, beatsPerSec);
+    let n = 1;
+    while (beatSec / n > MAX_CLICKS_PER_SEC_GAP && n < 16) n *= 2; // 1,2,4,8,16 per beat
+    return 1 / n; // subdivision length in beats
+  }
+  // stationary vertical beat/bar ruler (lines fixed; notes scroll across them)
+  function drawGrid(ctx, missX, pxPerBeat, barBeats, xMax, yTop, yBot) {
+    for (let k = 1; missX + k * pxPerBeat <= xMax + 1; k++) {
+      const x = missX + k * pxPerBeat;
+      const bar = (k % barBeats) === 0;
+      ctx.strokeStyle = bar ? STAFF.barLine : STAFF.beatLine;
+      ctx.lineWidth = bar ? 1.6 : 1;
+      ctx.beginPath(); ctx.moveTo(x, yTop); ctx.lineTo(x, yBot); ctx.stroke();
+    }
+  }
 
   class Game {
     constructor() {
@@ -65,18 +86,17 @@
       this.hits = 0; this.misses = 0; this.attempts = 0;
       this.lives = 3;
       this.status = 'idle'; // idle | playing | paused | over
-      this.spawnAcc = 0;
       this.lastTime = 0;
       this.peakScore = 0;
       this.queue = [];               // upcoming notes to spawn
       this.currentLickName = '';
       this.currentLickSource = '';
-      this._beatPos = 0;             // cumulative beats (for bar lines)
-      this._gapUnits = 1;            // note-slots until the next spawn (× spacing)
+      this.clock = null;             // musical beats elapsed at the play line
+      this.songBeat = 0;             // running onset beat for spawning
       this._avgDur = PATTERN_AVG_DUR; // avg note duration of current tune
       this._rhythmBuf = [];          // streamed rhythm pattern
       this.key = T.keySig(0);        // current key signature (C major)
-      this._metroBeats = 0;          // real-time beat accumulator (metronome)
+      this._clickUnit = null;        // last fired metronome subdivision index
     }
 
     _barBeats() {
@@ -149,10 +169,8 @@
       this.reset();
       this.lives = this.settings.lives;
       this.status = 'playing';
-      this.spawnAcc = 0;
       this.lastTime = 0;
-      this._refillQueue();
-      this._spawn(); // ensure one note on screen immediately
+      // notes are spawned by the clock-driven lookahead in update()
     }
 
     pause() { if (this.status === 'playing') this.status = 'paused'; }
@@ -214,24 +232,25 @@
       }));
     }
 
-    _spawn() {
+    // Pull the next queued note and place it on the beat grid. Returns false if
+    // nothing was available.
+    _spawnNext() {
       this._refillQueue();
       const item = this.queue.shift();
-      if (!item) return;
-      if (item.phraseStart && item.lickName) {
-        this.currentLickName = item.lickName;
-        this.currentLickSource = item.lickSource;
+      if (!item) return false;
+      if (item.phraseStart) {
+        // start each phrase on a bar downbeat (so its first note hits a bar line)
+        const bb = this._barBeats();
+        this.songBeat = Math.ceil((this.songBeat + 1e-4) / bb) * bb;
+        if (item.lickName) { this.currentLickName = item.lickName; this.currentLickSource = item.lickSource; }
       }
       const dur = item.dur || 1;
-      const barBeats = this._barBeats();
-      const pos = this._beatPos % barBeats;
-      const onBar = this._beatPos > 1e-6 && (pos < 1e-4 || barBeats - pos < 1e-4);
-      this.notes.push({ note: item.note, x: 0, spawnedRight: true, dur, barline: onBar, fifths: item.fifths != null ? item.fifths : (this.key ? this.key.fifths : 0) });
-      this._beatPos += dur;
-      const next = this.queue[0];
-      // gap to next onset in "note-slot" units: this note's relative length plus
-      // an inter-phrase rest. × NOTE_SPACING px (set in update) gives the distance.
-      this._gapUnits = (dur / this._avgDur) + (next && next.phraseStart ? PHRASE_GAP_UNITS : 0);
+      this.notes.push({
+        note: item.note, beat: this.songBeat, dur, x: 1e9,
+        fifths: item.fifths != null ? item.fifths : (this.key ? this.key.fifths : 0),
+      });
+      this.songBeat += dur;
+      return true;
     }
 
     get active() { return this.notes.length ? this.notes[0] : null; }
@@ -248,32 +267,28 @@
       this.lastTime = now;
       if (dt > 0.1) dt = 0.1; // clamp after tab switch
 
-      // notes/second target → constant scroll velocity = spacing × notes-per-sec.
-      // (Average onset rate = nps regardless of the tune's note density.)
+      // Musical clock at the play line. Tempo (beats/sec) = notes/sec × avg note
+      // duration, so the notes/sec target holds and dense tunes auto-slow.
       const nps = NPS_PRESETS[this.settings.speed] || 1;
-      const spacing = Math.max(120, Math.min(260, rect.w * NOTE_SPACING_FRAC));
-      this._spacing = spacing;
-      const v = spacing * nps; // px per second
-      const px = v * dt;
-      const rightEdge = rect.x + rect.w + 24;
+      const beatsPerSec = (this._avgDur || 1) * nps;
+      const pxPerBeat = Math.max(72, Math.min(150, rect.w * BEAT_PX));
       const missX = this._missX(rect);
+      const aheadBeats = (rect.x + rect.w - missX) / pxPerBeat + 1;
+      if (this.clock === null) this.clock = -Math.min(aheadBeats, 2.5); // short lead-in before the first note
+      this.clock += dt * beatsPerSec;
+      this._pxPerBeat = pxPerBeat;
+      this._clock = this.clock;
 
-      // newly spawned notes start at the right edge
-      this.notes.forEach((n) => { if (n.spawnedRight) { n.x = rightEdge; n.spawnedRight = false; } });
-      // move notes left; once past the halfway point they decelerate toward the
-      // play line (more reading time near the clear point) but never stall.
-      const mid = rect.x + rect.w * 0.5;
-      this.notes.forEach((n) => {
-        let f = 1;
-        if (n.x < mid) {
-          const t = (n.x - missX) / Math.max(1, mid - missX); // 1 at midpoint → 0 at play line
-          f = 0.4 + 0.6 * Math.max(0, Math.min(1, t));         // 100% → 40% speed
-        }
-        n.x -= px * f;
-      });
+      // position notes from their beat onset (stationary grid: x = playLine + (beat-now)·pxPerBeat)
+      this.notes.forEach((n) => { n.x = missX + (n.beat - this.clock) * pxPerBeat; });
 
-      // miss: leftmost crossed the play line
-      while (this.notes.length && this.notes[0].x <= missX) {
+      // spawn upcoming notes within the look-ahead window
+      this._refillQueue();
+      let guard = 0;
+      while (this.songBeat < this.clock + aheadBeats && guard++ < 64) { if (!this._spawnNext()) break; }
+
+      // miss: leftmost note scrolled past the play line (small grace beyond it)
+      while (this.notes.length && this.notes[0].beat < this.clock - 0.18) {
         const lost = this.notes.shift();
         this.score = Math.max(0, this.score - 1);
         this.streak = 0;
@@ -285,22 +300,19 @@
         }
       }
 
-      // metronome: real-time beat clock at the tune's tempo (avgDur × notes/sec)
-      if (this.status === 'playing') {
-        const beatsPerSec = (this._avgDur || 1) * nps;
-        const prevB = Math.floor(this._metroBeats);
-        this._metroBeats += dt * beatsPerSec;
-        if (Math.floor(this._metroBeats) > prevB) {
-          events.push({ type: 'beat', accent: (Math.floor(this._metroBeats) % this._barBeats()) === 0 });
+      // metronome: click on a subdivision (>=2/s); louder on bar, medium on beat
+      const subdiv = clickSubdiv(beatsPerSec);
+      const unit = Math.floor(this.clock / subdiv + 1e-6);
+      if (this._clickUnit === null) this._clickUnit = unit;
+      const bb = this._barBeats();
+      while (this._clickUnit < unit) {
+        this._clickUnit++;
+        const beatPos = this._clickUnit * subdiv;
+        if (beatPos >= 0) {
+          const onBeat = Math.abs(beatPos - Math.round(beatPos)) < 1e-6;
+          const onBar = onBeat && (Math.round(beatPos) % bb) === 0;
+          events.push({ type: 'beat', level: onBar ? 'bar' : onBeat ? 'beat' : 'sub' });
         }
-      }
-
-      // spawn cadence: distance to next note = gap-units × spacing
-      if (this.status === 'playing') {
-        this.spawnAcc += px;
-        this._refillQueue();
-        const requiredPx = (this._gapUnits || 1) * spacing;
-        if (this.spawnAcc >= requiredPx) { this.spawnAcc -= requiredPx; this._spawn(); }
       }
 
       this.peakScore = Math.max(this.peakScore, this.score);
@@ -382,6 +394,9 @@
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(missX, rect.y + 4); ctx.lineTo(missX, rect.y + rect.h - 4); ctx.stroke();
 
+      // stationary beat/bar ruler (drawn under the staff lines + notes)
+      drawGrid(ctx, missX, this._pxPerBeat || rect.w * BEAT_PX, this._barBeats(), rect.x + rect.w, yFor(middleStep + 5.5), yFor(middleStep - 5.5));
+
       // staff lines (full width)
       ctx.lineWidth = 1.4; ctx.strokeStyle = STAFF.line;
       lineSteps.forEach((s) => {
@@ -407,12 +422,6 @@
         const y = yFor(step);
         const isActive = i === 0;
         const color = isActive ? STAFF.noteActive : STAFF.note;
-
-        if (n.barline) {
-          ctx.strokeStyle = STAFF.lineDim; ctx.lineWidth = 1;
-          const bx = n.x - noteRx * 2.0;
-          ctx.beginPath(); ctx.moveTo(bx, yFor(middleStep + 4)); ctx.lineTo(bx, yFor(middleStep - 4)); ctx.stroke();
-        }
 
         // ledger lines
         ctx.strokeStyle = color; ctx.lineWidth = 1.4;
@@ -475,6 +484,9 @@
       ctx.strokeStyle = STAFF.playLine; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(missX, rect.y + 4); ctx.lineTo(missX, rect.y + rect.h - 4); ctx.stroke();
 
+      // stationary beat/bar ruler spanning both staves
+      drawGrid(ctx, missX, this._pxPerBeat || rect.w * BEAT_PX, this._barBeats(), rect.x + rect.w, yFor(40), yFor(16));
+
       ctx.lineWidth = 1.3; ctx.strokeStyle = STAFF.line;
       trebleLines.concat(bassLines).forEach((s) => {
         const y = yFor(s);
@@ -503,12 +515,6 @@
         const treble = n.note.midi >= 60;
         const homeLines = treble ? trebleLines : bassLines;
         const homeMiddle = treble ? 34 : 22;
-
-        if (n.barline) {
-          ctx.strokeStyle = STAFF.lineDim; ctx.lineWidth = 1;
-          const bx = n.x - noteRx * 2.0;
-          ctx.beginPath(); ctx.moveTo(bx, yFor(38)); ctx.lineTo(bx, yFor(18)); ctx.stroke();
-        }
 
         ctx.strokeStyle = color; ctx.lineWidth = 1.4;
         const topL = homeLines[homeLines.length - 1], botL = homeLines[0];

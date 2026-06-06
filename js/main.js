@@ -99,7 +99,7 @@
   function handleEvent(ev) {
     if (ev.type === 'miss') { flashScreen('bad'); if (state.settings.sound) App.Audio.playError(); updateLives(); }
     else if (ev.type === 'gameover') endGame();
-    else if (ev.type === 'beat') { if (state.settings.metronome && state.settings.sound) App.Audio.tick(ev.accent); }
+    else if (ev.type === 'beat') { if (state.settings.metronome && state.settings.sound) App.Audio.tick(ev.level); }
   }
 
   // ---- input --------------------------------------------------------------
