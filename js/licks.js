@@ -161,34 +161,46 @@
     return out;
   }
 
-  // Transpose a lick to fit an instrument's range.
-  //   semis === 0 : octave-fit only, preserving the original spelling.
-  //   semis !== 0 : shift by `semis` semitones (random-key), respell with sharps,
-  //                 then octave-fit. Every returned note is guaranteed playable.
+  // Transpose a lick to fit an instrument's range, then place it at a RANDOM
+  // octave within the playable headroom so that, across many phrases, the licks
+  // cover the instrument's FULL range instead of all clustering at its centre
+  // (which, for the grand piano, parked every melody around middle C).
+  //   semis === 0 : octave-shift only, preserving the original spelling.
+  //   semis !== 0 : shift by `semis` semitones (random-key), respell with sharps.
+  // Every returned note is guaranteed playable (within [minMidi, maxMidi]).
   function transposeToInstrument(notes, inst, semis) {
     semis = semis || 0;
+    const loM = inst.minMidi, hiM = inst.maxMidi;
     if (!semis) {
       const mids = notes.map((n) => n.midi);
-      const lo = Math.min(...mids), hi = Math.max(...mids);
-      const center = (inst.minMidi + inst.maxMidi) / 2;
-      const k = Math.round((center - (lo + hi) / 2) / 12);
+      const k = pickOctaveShift(Math.min(...mids), Math.max(...mids), loM, hiM);
       return notes.map((n) => {
         let oct = n.octave + k, m = T.midiOf(n.letter, oct, n.accidental);
-        while (m < inst.minMidi) { oct++; m += 12; }
-        while (m > inst.maxMidi) { oct--; m -= 12; }
+        while (m < loM) { oct++; m += 12; }
+        while (m > hiM) { oct--; m -= 12; }
         return T.makeNote(n.letter, oct, n.accidental);
       });
     }
     const shifted = notes.map((n) => n.midi + semis);
-    const lo = Math.min(...shifted), hi = Math.max(...shifted);
-    const center = (inst.minMidi + inst.maxMidi) / 2;
-    const k = Math.round((center - (lo + hi) / 2) / 12) * 12;
+    const k = pickOctaveShift(Math.min(...shifted), Math.max(...shifted), loM, hiM) * 12;
     return shifted.map((m0) => {
       let m = m0 + k;
-      while (m < inst.minMidi) m += 12;
-      while (m > inst.maxMidi) m -= 12;
+      while (m < loM) m += 12;
+      while (m > hiM) m -= 12;
       return T.spellMidi(m);
     });
+  }
+
+  // How many octaves to shift a lick spanning [lo,hi] so it lands at a random
+  // playable position inside [loM,hiM]. When it fits with room to spare, the
+  // octave is chosen uniformly across every whole-octave slot that fits, so the
+  // corpus spreads over the whole range; when it's wider than the instrument
+  // (no whole-octave fit), fall back to the shift that centres it.
+  function pickOctaveShift(lo, hi, loM, hiM) {
+    const kMin = Math.ceil((loM - lo) / 12);
+    const kMax = Math.floor((hiM - hi) / 12);
+    if (kMax >= kMin) return kMin + Math.floor(Math.random() * (kMax - kMin + 1));
+    return Math.round(((loM + hiM) / 2 - (lo + hi) / 2) / 12); // can't fit → centre
   }
 
   App.Licks = { GENRES, get, getAll, transposeToInstrument };
