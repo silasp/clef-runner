@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0f16" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Clef Runner — Sight-Reading Trainer</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/icon.svg" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- ===== MENU ===== -->
+    <section id="menu" class="screen active">
+      <div class="menu-inner">
+        <div class="brand">
+          <div class="logo">𝄞</div>
+          <div>
+            <h1>Clef Runner</h1>
+            <div class="tagline">Read the notes before they fall off the edge.</div>
+          </div>
+        </div>
+
+        <div class="section-title">Choose your instrument</div>
+        <div class="instrument-grid" id="instrumentGrid">
+          <button class="inst-card" data-inst="piano"><span class="emoji">🎹</span><span class="label">Piano</span><span class="sub">Keyboard</span></button>
+          <button class="inst-card" data-inst="guitar"><span class="emoji">🎸</span><span class="label">Guitar</span><span class="sub">Fretboard</span></button>
+          <button class="inst-card" data-inst="violin"><span class="emoji">🎻</span><span class="label">Violin</span><span class="sub">Fingerboard</span></button>
+        </div>
+
+        <div class="section-title">Settings</div>
+        <div class="settings">
+          <div class="setting">
+            <div class="row"><label>Practice mode</label></div>
+            <div class="desc">Random notes, or real genre licks &amp; melodies</div>
+            <div class="segmented" id="segMode" style="margin-top:10px;">
+              <button data-v="random" class="on">Random</button><button data-v="licks">Licks</button>
+            </div>
+          </div>
+          <div class="setting" id="genreSetting" style="display:none;">
+            <div class="row"><label>Genre</label></div>
+            <div class="desc">Source of the licks &amp; melodies</div>
+            <div class="segmented wrap" id="genreChips" style="margin-top:10px;"></div>
+            <div class="desc" id="folkStatus" style="margin-top:8px;"></div>
+          </div>
+          <div class="setting">
+            <div class="row"><label>Difficulty</label></div>
+            <div class="desc">Note range &amp; accidentals</div>
+            <div class="segmented" id="segDifficulty" style="margin-top:10px;">
+              <button data-v="easy">Easy</button><button data-v="medium" class="on">Medium</button><button data-v="hard">Hard</button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="row"><label>Tempo</label></div>
+            <div class="desc">Playback tempo (BPM)</div>
+            <div class="segmented" id="segSpeed" style="margin-top:10px;">
+              <button data-v="relaxed">Relaxed</button><button data-v="steady" class="on">Steady</button><button data-v="brisk">Brisk</button><button data-v="intense">Intense</button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="row"><label>Time signature</label></div>
+            <div class="desc">Bar length for the rhythm grid</div>
+            <div class="segmented wrap" id="segTimeSig" style="margin-top:10px;">
+              <button data-v="4/4" class="on">4/4</button><button data-v="3/4">3/4</button><button data-v="6/8">6/8</button><button data-v="2/4">2/4</button>
+            </div>
+          </div>
+          <div class="setting" id="clefSetting" style="display:none;">
+            <div class="row"><label>Clef (piano)</label></div>
+            <div class="desc">Which staff to read</div>
+            <div class="segmented wrap" id="segClef" style="margin-top:10px;">
+              <button data-v="treble" class="on">Treble</button><button data-v="bass">Bass</button><button data-v="grand">Treble + Bass</button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="row"><label>Show hints</label><button class="toggle" id="tglHints" aria-label="Toggle hints"></button></div>
+            <div class="desc">Highlight where to tap &amp; show note names</div>
+          </div>
+          <div class="setting">
+            <div class="row"><label>Sound</label><button class="toggle on" id="tglSound" aria-label="Toggle sound"></button></div>
+            <div class="desc">Play each note you hit</div>
+          </div>
+          <div class="setting">
+            <div class="row"><label>3-Lives mode</label><button class="toggle" id="tglLives" aria-label="Toggle lives mode"></button></div>
+            <div class="desc">Game over after 3 missed notes (vs endless practice)</div>
+          </div>
+          <div class="setting">
+            <div class="row"><label>Random key</label><button class="toggle" id="tglRandomKey" aria-label="Toggle random key"></button></div>
+            <div class="desc">Transpose each lick to a random key (Licks mode)</div>
+          </div>
+          <div class="setting">
+            <div class="row"><label>Play along (mic)</label><button class="toggle" id="tglMic" aria-label="Toggle microphone"></button></div>
+            <div class="desc">Detect your instrument's pitch from the mic · needs https or localhost</div>
+          </div>
+        </div>
+
+        <button class="btn-primary" id="startBtn">▶  Start playing</button>
+
+        <div class="section-title">Player</div>
+        <div class="account" id="accountBox"></div>
+
+        <div class="section-title">Leaderboard <span id="boardInst" style="color:var(--muted);text-transform:none;letter-spacing:0;"></span></div>
+        <div class="board" id="leaderboard"></div>
+      </div>
+    </section>
+
+    <!-- ===== GAME ===== -->
+    <section id="game" class="screen">
+      <div class="hud">
+        <button class="icon-btn" id="pauseBtn" aria-label="Pause">⏸</button>
+        <div class="stat score"><span class="k">Score</span><span class="v" id="hudScore">0</span></div>
+        <div class="stat streak"><span class="k">Streak</span><span class="v" id="hudStreak">0</span></div>
+        <span class="mult" id="hudMult" style="visibility:hidden;">×2</span>
+        <div class="grow lickbar" id="hudLick"></div>
+        <div class="stat" id="hudAccWrap"><span class="k">Accuracy</span><span class="v" id="hudAcc">100%</span></div>
+        <div class="lives" id="hudLives" style="display:none;"></div>
+        <button class="icon-btn" id="menuBtn" aria-label="Menu">☰</button>
+      </div>
+
+      <div id="staffWrap">
+        <canvas id="staff"></canvas>
+        <div class="flash good" id="flashGood"></div>
+        <div class="flash bad" id="flashBad"></div>
+        <div class="popup" id="popup"></div>
+      </div>
+
+      <div id="instrumentWrap">
+        <canvas id="instrument"></canvas>
+      </div>
+
+      <!-- overlays -->
+      <div class="overlay" id="countdownOverlay"><div id="countdown">3</div></div>
+      <div class="overlay" id="pauseOverlay">
+        <div class="card">
+          <h2>Paused</h2>
+          <div class="actions">
+            <button class="go" id="resumeBtn">Resume</button>
+            <button id="quitBtn">Quit to menu</button>
+          </div>
+        </div>
+      </div>
+      <div class="overlay" id="overOverlay">
+        <div class="card">
+          <h2>Game over</h2>
+          <div id="newBest"></div>
+          <div class="stats-grid">
+            <div><div class="k">Score</div><div class="v" id="ovScore">0</div></div>
+            <div><div class="k">Best streak</div><div class="v" id="ovStreak">0</div></div>
+            <div><div class="k">Accuracy</div><div class="v" id="ovAcc">0%</div></div>
+          </div>
+          <div class="actions">
+            <button class="go" id="againBtn">Play again</button>
+            <button id="overMenuBtn">Menu</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="rotate">
+    <div>
+      <div class="ico">📱</div>
+      <h2>Rotate your device</h2>
+      <p>Clef Runner is designed for landscape.</p>
+    </div>
+  </div>
+
+  <script src="js/theory.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/pitch.js"></script>
+  <script src="js/instruments.js"></script>
+  <script src="js/lickgen.js"></script>
+  <script src="js/abc.js"></script>
+  <script src="js/data/tunes.js"></script>
+  <script src="js/data/manifest.js"></script>
+  <script src="js/licks.js"></script>
+  <script src="js/folktunes.js"></script>
+  <script src="js/songs.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

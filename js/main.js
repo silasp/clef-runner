@@ -1,0 +1,495 @@
+/* main.js — wiring: menu, settings, canvases, game loop, input, scoring UI. */
+(function (App) {
+  'use strict';
+
+  // ===========================================================================
+  // CONFIG — to enable Google Sign-In: paste your OAuth Web client ID here and
+  // serve the page over http(s) (Google SSO does not work from file://).
+  // Get one at https://console.cloud.google.com/apis/credentials
+  // Leave blank to play with local guest profiles (works fully offline).
+  const GOOGLE_CLIENT_ID = '';
+  // ===========================================================================
+
+  const $ = (id) => document.getElementById(id);
+  const DEFS = App.Instruments.DEFS;
+
+  const state = {
+    inst: 'piano',
+    settings: { mode: 'random', genre: 'blues', difficulty: 'medium', speed: 'steady', clef: 'treble', showHints: false, sound: true, livesMode: false, randomKey: false, timeSig: '4/4', mic: false },
+  };
+  const micState = { lastFire: null, stableMidi: null, stableCount: 0, silentFrames: 0, armed: true, frame: 0 };
+  let game = new App.Game();
+  let instrument = null;
+  let staffCtx, instCtx, staffRect, instRect;
+  let countdownTimer = null;
+
+  // ---- persistence of settings -------------------------------------------
+  function loadSettings() {
+    try {
+      const s = JSON.parse(localStorage.getItem('sr.settings'));
+      if (s) Object.assign(state.settings, s);
+      state.settings.mic = false; // never auto-grab the mic on load
+      const i = localStorage.getItem('sr.inst');
+      if (i && DEFS[i === 'pianoBass' ? 'piano' : i]) state.inst = i === 'pianoBass' ? 'piano' : i;
+    } catch (e) {}
+  }
+  function saveSettings() {
+    localStorage.setItem('sr.settings', JSON.stringify(state.settings));
+    localStorage.setItem('sr.inst', state.inst);
+  }
+
+  function instKey() {
+    if (state.inst === 'piano') {
+      if (state.settings.clef === 'bass') return 'pianoBass';
+      if (state.settings.clef === 'grand') return 'pianoGrand';
+      return 'piano';
+    }
+    return state.inst;
+  }
+  // leaderboard / personal-best key ignores clef variant
+  function boardKey() { return state.inst; }
+
+  // ---- canvas sizing ------------------------------------------------------
+  function fitCanvas(canvas) {
+    const wrap = canvas.parentElement;
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.height = Math.max(1, Math.round(h * dpr));
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, rect: { x: 0, y: 0, w, h } };
+  }
+
+  function resize() {
+    const s = fitCanvas($('staff')); staffCtx = s.ctx; staffRect = s.rect;
+    const i = fitCanvas($('instrument')); instCtx = i.ctx; instRect = i.rect;
+    if (instrument) {
+      // leave a little inset so keys/markers aren't flush to the edges
+      const pad = 6;
+      instrument.layout({ x: pad, y: pad, w: instRect.w - pad * 2, h: instRect.h - pad * 2 });
+    }
+  }
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+
+  // ---- render loop --------------------------------------------------------
+  function loop(now) {
+    try {
+      // only draw the staff once a game has been configured (clef set)
+      if (staffCtx && game.clef) {
+        staffCtx.clearRect(0, 0, staffRect.w, staffRect.h);
+        const events = game.update(now, staffRect);
+        game.drawStaff(staffCtx, staffRect);
+        events.forEach(handleEvent);
+      }
+      if (instCtx && instrument) {
+        instCtx.clearRect(0, 0, instRect.w, instRect.h);
+        instrument.draw(instCtx);
+      }
+      if (state.settings.mic) detectMic();
+      if (gameVisible()) updateHud();
+    } catch (e) {
+      // never let one bad frame kill the whole render loop
+      console.error('render frame error:', e);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  function handleEvent(ev) {
+    if (ev.type === 'miss') { flashScreen('bad'); if (state.settings.sound) App.Audio.playError(); updateLives(); }
+    else if (ev.type === 'gameover') endGame();
+  }
+
+  // ---- input --------------------------------------------------------------
+  function onTap(e) {
+    if (!instrument) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    const cell = instrument.hitTest(x, y);
+    if (!cell) return;
+    App.Audio.unlock();
+    const res = game.handleTap(cell.midi);
+    if (!res) { // not playing / nothing active — still give tactile sound
+      if (state.settings.sound) App.Audio.playMidi(cell.midi, 0.25);
+      return;
+    }
+    if (res.result === 'good') {
+      instrument.flashCell(cell.id, 'good');
+      flashScreen('good');
+      if (state.settings.sound) App.Audio.playMidi(cell.midi);
+      showPopup(res.multiplier > 1 ? `+${res.multiplier}` : '+1', res.multiplier > 1);
+    } else {
+      instrument.flashCell(cell.id, 'bad');
+      flashScreen('bad');
+      if (state.settings.sound) App.Audio.playError();
+    }
+    updateHud();
+  }
+
+  // ---- microphone play-along ---------------------------------------------
+  function detectMic() {
+    if (!App.Pitch || !App.Pitch.isRunning() || game.status !== 'playing') return;
+    micState.frame++;
+    if (micState.frame % 2 !== 0) return; // ~30 Hz is plenty
+    const p = App.Pitch.detect();
+    if (!p || p.midi == null) {
+      micState.silentFrames++;
+      if (micState.silentFrames > 2) { micState.armed = true; micState.stableMidi = null; micState.stableCount = 0; }
+      return;
+    }
+    micState.silentFrames = 0;
+    if (p.midi === micState.stableMidi) micState.stableCount++;
+    else { micState.stableMidi = p.midi; micState.stableCount = 1; }
+    if (micState.stableCount === 2 && (micState.armed || p.midi !== micState.lastFire)) {
+      handleMicNote(p.midi);
+      micState.lastFire = p.midi; micState.armed = false;
+    }
+  }
+  function handleMicNote(midi) {
+    const res = game.handleMic(midi);
+    if (res && res.result === 'good') {
+      instrument.cellsForMidi(res.note.midi).forEach((c) => instrument.flashCell(c.id, 'good'));
+      flashScreen('good');
+      showPopup(res.multiplier > 1 ? `+${res.multiplier}` : '+1', res.multiplier > 1);
+      updateHud();
+    }
+  }
+  async function enableMic() {
+    try { await App.Pitch.start(); return true; }
+    catch (e) { return false; }
+  }
+
+  // ---- feedback -----------------------------------------------------------
+  function flashScreen(kind) {
+    const el = kind === 'good' ? $('flashGood') : $('flashBad');
+    el.classList.remove('show');
+    void el.offsetWidth; // restart animation
+    el.classList.add('show');
+  }
+  function showPopup(text, big) {
+    const p = $('popup');
+    p.textContent = text;
+    p.style.color = 'var(--good)';
+    p.style.fontSize = big ? '30px' : '22px';
+    p.style.left = (game._missX(staffRect) + 14) + 'px';
+    p.style.top = (staffRect.h / 2 - 20) + 'px';
+    p.classList.remove('show'); void p.offsetWidth; p.classList.add('show');
+  }
+
+  // ---- HUD ----------------------------------------------------------------
+  function gameVisible() { return $('game').classList.contains('active'); }
+  function updateHud() {
+    $('hudScore').textContent = game.score;
+    $('hudStreak').textContent = game.streak;
+    const mult = game.multiplier();
+    const mEl = $('hudMult');
+    if (mult > 1) { mEl.textContent = '×' + mult; mEl.style.visibility = 'visible'; }
+    else mEl.style.visibility = 'hidden';
+    $('hudAcc').textContent = game.accuracy() + '%';
+    const lick = $('hudLick');
+    if (state.settings.mode === 'licks' && game.currentLickName) {
+      lick.innerHTML = '♪ <b>' + escapeHtml(game.currentLickName) + '</b>' +
+        (game.currentLickSource ? ' <span class="src">· ' + escapeHtml(game.currentLickSource) + '</span>' : '');
+    } else { lick.textContent = ''; }
+    updateLives();
+  }
+  function updateLives() {
+    const el = $('hudLives');
+    if (!state.settings.livesMode) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.textContent = '❤️'.repeat(Math.max(0, game.lives)) + '🤍'.repeat(Math.max(0, state.settings.lives - game.lives));
+  }
+
+  // ---- screens ------------------------------------------------------------
+  function show(screen) {
+    $('menu').classList.toggle('active', screen === 'menu');
+    $('game').classList.toggle('active', screen === 'game');
+  }
+
+  function buildInstrument() {
+    instrument = new App.Instruments.Instrument(instKey());
+    instrument.setShowLabels(state.settings.showHints);
+    game.configure(instrument, state.settings);
+    resize();
+  }
+
+  async function startGame() {
+    saveSettings();
+    show('game');          // make #game visible first so wrappers have real height
+    // lazily load the selected genre's song shards before configuring the game
+    if (state.settings.mode === 'licks' && App.Songs && App.Songs.has(state.settings.genre) && !App.Songs.loaded(state.settings.genre)) {
+      $('countdown').textContent = 'Loading tunes…';
+      $('countdownOverlay').classList.add('active');
+      await App.Songs.ensure(state.settings.genre);
+      $('countdownOverlay').classList.remove('active');
+    }
+    buildInstrument();     // configure + size canvases against the visible layout
+    closeOverlays();
+    updateLives();
+    // countdown 3..2..1..Go
+    const seq = ['3', '2', '1', 'Go!'];
+    let idx = 0;
+    $('countdownOverlay').classList.add('active');
+    App.Audio.unlock();
+    const tick = () => {
+      $('countdown').textContent = seq[idx];
+      idx++;
+      if (idx <= seq.length) {
+        countdownTimer = setTimeout(tick, idx === seq.length + 0 ? 450 : 650);
+      }
+      if (idx > seq.length) {
+        $('countdownOverlay').classList.remove('active');
+        game.start();
+        updateHud();
+      }
+    };
+    tick();
+  }
+
+  function closeOverlays() {
+    ['countdownOverlay', 'pauseOverlay', 'overOverlay'].forEach((id) => $(id).classList.remove('active'));
+  }
+
+  function pauseGame() {
+    if (game.status !== 'playing') return;
+    game.pause();
+    $('pauseOverlay').classList.add('active');
+  }
+  function resumeGame() { $('pauseOverlay').classList.remove('active'); game.resume(); }
+
+  function recordIfWorthwhile() {
+    if (game.attempts <= 0) return null;
+    const finalScore = Math.max(game.score, game.peakScore);
+    return App.Auth.recordScore({
+      instrument: boardKey(),
+      difficulty: state.settings.difficulty,
+      score: finalScore,
+      bestStreak: game.bestStreak,
+      accuracy: game.accuracy(),
+    });
+  }
+
+  function endGame() {
+    const rec = recordIfWorthwhile();
+    $('ovScore').textContent = Math.max(game.score, game.peakScore);
+    $('ovStreak').textContent = game.bestStreak;
+    $('ovAcc').textContent = game.accuracy() + '%';
+    $('newBest').innerHTML = rec && rec.newBest ? '<span class="badge-new">★ New personal best!</span>' : '';
+    $('overOverlay').classList.add('active');
+  }
+
+  function quitToMenu() {
+    if (countdownTimer) clearTimeout(countdownTimer);
+    recordIfWorthwhile();
+    game.status = 'over';
+    closeOverlays();
+    show('menu');
+    renderMenu();
+  }
+
+  // ---- menu rendering -----------------------------------------------------
+  function renderInstrumentCards() {
+    document.querySelectorAll('#instrumentGrid .inst-card').forEach((b) => {
+      b.classList.toggle('selected', b.dataset.inst === state.inst);
+    });
+    $('clefSetting').style.display = state.inst === 'piano' ? '' : 'none';
+  }
+
+  function renderSegmented(segId, value) {
+    document.querySelectorAll('#' + segId + ' button').forEach((b) => b.classList.toggle('on', b.dataset.v === value));
+  }
+  function renderToggle(id, on) { $(id).classList.toggle('on', !!on); }
+
+  function renderAccount() {
+    const box = $('accountBox');
+    const p = App.Auth.getProfile();
+    box.innerHTML = '';
+    if (p) {
+      const av = el('div', 'avatar');
+      if (p.picture) { const img = document.createElement('img'); img.src = p.picture; img.referrerPolicy = 'no-referrer'; av.appendChild(img); }
+      else av.textContent = (p.name || '?').slice(0, 1).toUpperCase();
+      const who = el('div', 'who');
+      who.innerHTML = `<div class="name">${escapeHtml(p.name)}</div><div class="meta">${p.google ? 'Google account' : 'Local profile'}</div>`;
+      const out = el('button', 'link-btn'); out.textContent = 'Sign out';
+      out.onclick = () => { App.Auth.signOut(); };
+      box.append(av, who, out);
+    } else {
+      const row = el('div', 'signin-row');
+      const input = document.createElement('input');
+      input.placeholder = 'Enter a name to track scores';
+      input.maxLength = 24;
+      const go = el('button', 'link-btn'); go.textContent = 'Play as guest';
+      go.onclick = () => App.Auth.signInGuest(input.value);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go.click(); });
+      row.append(input, go);
+      box.appendChild(row);
+      if (App.Auth.googleAvailable) {
+        const host = el('div'); host.id = 'googleBtnHost'; box.appendChild(host);
+        App.Auth.renderGoogleButton(host);
+      }
+    }
+  }
+
+  function renderLeaderboard() {
+    const key = boardKey();
+    $('boardInst').textContent = '· ' + DEFS[key].name;
+    const rows = App.Auth.leaderboard(key, 10);
+    const board = $('leaderboard');
+    board.innerHTML = '<div class="b-row head"><span>#</span><span>Player</span><span>Streak</span><span>Score</span></div>';
+    if (!rows.length) {
+      board.insertAdjacentHTML('beforeend', '<div class="empty">No scores yet — play a round to set the pace.</div>');
+      return;
+    }
+    rows.forEach((r, i) => {
+      board.insertAdjacentHTML('beforeend',
+        `<div class="b-row"><span class="rank">${i + 1}</span><span>${escapeHtml(r.name || 'Player')}</span><span>${r.bestStreak || 0}🔥</span><span class="score">${r.score}</span></div>`);
+    });
+  }
+
+  function renderGenreChips() {
+    const host = $('genreChips');
+    if (!host.childElementCount) {
+      (App.Licks ? App.Licks.GENRES : []).forEach((g) => {
+        const b = document.createElement('button');
+        b.dataset.v = g.key; b.textContent = g.label;
+        b.onclick = () => {
+          state.settings.genre = g.key; saveSettings(); markGenre(); updateFolkStatus();
+          if (App.Songs && App.Songs.has(g.key) && !App.Songs.loaded(g.key)) App.Songs.ensure(g.key).then(updateFolkStatus);
+        };
+        host.appendChild(b);
+      });
+    }
+    markGenre();
+  }
+  function markGenre() {
+    document.querySelectorAll('#genreChips button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.settings.genre));
+  }
+  function updateModeVisibility() {
+    $('genreSetting').style.display = state.settings.mode === 'licks' ? '' : 'none';
+  }
+
+  function renderMenu() {
+    renderInstrumentCards();
+    renderSegmented('segMode', state.settings.mode);
+    renderGenreChips();
+    updateModeVisibility();
+    renderSegmented('segDifficulty', state.settings.difficulty);
+    renderSegmented('segSpeed', state.settings.speed);
+    renderSegmented('segTimeSig', state.settings.timeSig);
+    renderSegmented('segClef', state.settings.clef);
+    renderToggle('tglHints', state.settings.showHints);
+    renderToggle('tglSound', state.settings.sound);
+    renderToggle('tglLives', state.settings.livesMode);
+    renderToggle('tglRandomKey', state.settings.randomKey);
+    renderToggle('tglMic', state.settings.mic);
+    renderAccount();
+    renderLeaderboard();
+  }
+
+  // ---- small DOM helpers --------------------------------------------------
+  function el(tag, cls) { const e = document.createElement(tag); if (cls) e.className = cls; return e; }
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  // ---- event bindings -----------------------------------------------------
+  function bind() {
+    document.querySelectorAll('#instrumentGrid .inst-card').forEach((b) => {
+      b.onclick = () => { state.inst = b.dataset.inst; saveSettings(); renderInstrumentCards(); renderLeaderboard(); };
+    });
+    bindSeg('segMode', (v) => { state.settings.mode = v; updateModeVisibility(); });
+    bindSeg('segDifficulty', (v) => { state.settings.difficulty = v; });
+    bindSeg('segSpeed', (v) => { state.settings.speed = v; });
+    bindSeg('segTimeSig', (v) => { state.settings.timeSig = v; });
+    bindSeg('segClef', (v) => { state.settings.clef = v; renderLeaderboard(); });
+    bindToggle('tglHints', () => { state.settings.showHints = !state.settings.showHints; renderToggle('tglHints', state.settings.showHints); });
+    bindToggle('tglSound', () => { state.settings.sound = !state.settings.sound; App.Audio.setEnabled(state.settings.sound); renderToggle('tglSound', state.settings.sound); });
+    bindToggle('tglLives', () => { state.settings.livesMode = !state.settings.livesMode; renderToggle('tglLives', state.settings.livesMode); });
+    bindToggle('tglRandomKey', () => { state.settings.randomKey = !state.settings.randomKey; renderToggle('tglRandomKey', state.settings.randomKey); });
+    $('tglMic').onclick = async () => {
+      if (!state.settings.mic) {
+        const ok = await enableMic();
+        if (!ok) { window.alert('Microphone unavailable.\nServe the app over https or http://localhost (the mic can’t be used from a file:// page), then allow access.'); return; }
+        state.settings.mic = true;
+      } else {
+        App.Pitch.stop();
+        state.settings.mic = false;
+      }
+      renderToggle('tglMic', state.settings.mic);
+      saveSettings();
+    };
+
+    $('startBtn').onclick = startGame;
+    $('pauseBtn').onclick = pauseGame;
+    $('menuBtn').onclick = quitToMenu;
+    $('resumeBtn').onclick = resumeGame;
+    $('quitBtn').onclick = quitToMenu;
+    $('againBtn').onclick = startGame;
+    $('overMenuBtn').onclick = quitToMenu;
+
+    const ic = $('instrument');
+    ic.addEventListener('pointerdown', onTap);
+    ic.addEventListener('contextmenu', (e) => e.preventDefault());
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
+
+    App.Auth.onChange(() => { saveSettings(); if (gameVisible()) return; renderMenu(); });
+  }
+  function bindSeg(id, fn) {
+    document.querySelectorAll('#' + id + ' button').forEach((b) => {
+      b.onclick = () => { fn(b.dataset.v); saveSettings(); renderSegmented(id, b.dataset.v); };
+    });
+  }
+  function bindToggle(id, fn) { $(id).onclick = () => { fn(); saveSettings(); }; }
+
+  // ---- Google SSO (optional) + service worker -----------------------------
+  function initAuthAndSW() {
+    const served = location.protocol === 'http:' || location.protocol === 'https:';
+    if (GOOGLE_CLIENT_ID && served) {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true; s.defer = true;
+      s.onload = () => { App.Auth.init(GOOGLE_CLIENT_ID); renderMenu(); };
+      s.onerror = () => App.Auth.init('');
+      document.head.appendChild(s);
+    } else {
+      App.Auth.init('');
+    }
+    if ('serviceWorker' in navigator && served) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  }
+
+  // ---- boot ---------------------------------------------------------------
+  // debug accessor (harmless): inspect live game/instrument from the console
+  App.debug = { game: () => game, instrument: () => instrument };
+
+  function updateFolkStatus() {
+    const el = $('folkStatus');
+    if (!el) return;
+    const g = state.settings.genre;
+    const parts = [];
+    if (g === 'folk' && App.FolkTunes && App.FolkTunes.count()) parts.push(App.FolkTunes.count().toLocaleString() + ' Nottingham');
+    if (App.Songs && App.Songs.has(g)) {
+      if (App.Songs.loaded(g)) parts.push(App.Songs.count(g).toLocaleString() + ' thesession.org');
+      else parts.push('loading thesession.org tunes…');
+    }
+    el.textContent = parts.length ? '♪ ' + parts.join(' + ') + ' tunes' : '';
+  }
+
+  function boot() {
+    loadSettings();
+    App.Audio.setEnabled(state.settings.sound);
+    bind();
+    initAuthAndSW();
+    renderMenu();
+    resize();
+    if (App.FolkTunes) {
+      App.FolkTunes.onLoad(updateFolkStatus);
+      App.FolkTunes.load(1000);
+      updateFolkStatus();
+    }
+    requestAnimationFrame(loop);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})(window.App = window.App || {});

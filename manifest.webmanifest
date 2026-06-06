@@ -1,0 +1,14 @@
+{
+  "name": "Clef Runner — Sight-Reading Trainer",
+  "short_name": "Clef Runner",
+  "description": "Learn to sight-read music on piano, guitar and violin. Tap the right key before the note scrolls off the edge.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0c0f16",
+  "theme_color": "#0c0f16",
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

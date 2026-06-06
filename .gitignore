@@ -1,0 +1,11 @@
+# OS / editor
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# build / deps (none — this is a static, no-build app)
+node_modules/
+
+# local OMR/data scratch (not part of the app)
+/tmp/
