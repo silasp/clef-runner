@@ -102,45 +102,80 @@
     };
   }
 
-  // Draw a notehead + stem + flags + augmentation dot for one note. Spacing is
-  // handled by x position; this only conveys the rhythmic *value*.
-  function drawNoteShape(ctx, x, y, gap, color, dur, stemUp, noteRx, noteRy, stemLen) {
-    const g = rhythmGlyph(dur);
-    // stem
-    let tipX, tipY;
-    if (g.stem) {
-      ctx.strokeStyle = color; ctx.lineWidth = 2;
-      ctx.beginPath();
-      if (stemUp) { tipX = x + noteRx - 0.5; tipY = y - stemLen; ctx.moveTo(tipX, y); ctx.lineTo(tipX, tipY); }
-      else { tipX = x - noteRx + 0.5; tipY = y + stemLen; ctx.moveTo(tipX, y); ctx.lineTo(tipX, tipY); }
-      ctx.stroke();
-    }
-    // flags (always hook to the right of the stem, curving toward the head)
-    if (g.stem && g.flags) {
-      ctx.fillStyle = color;
-      const dir = stemUp ? 1 : -1; // +1 = flag hangs downward, -1 = upward
-      for (let k = 0; k < g.flags; k++) {
-        const fy = tipY + dir * k * gap * 0.62;
-        ctx.beginPath();
-        ctx.moveTo(tipX, fy);
-        ctx.quadraticCurveTo(tipX + gap * 1.15, fy + dir * gap * 0.55, tipX + gap * 0.95, fy + dir * gap * 1.55);
-        ctx.quadraticCurveTo(tipX + gap * 0.7, fy + dir * gap * 0.8, tipX, fy + dir * gap * 0.72);
-        ctx.closePath(); ctx.fill();
-      }
-    }
-    // notehead
-    ctx.save();
-    ctx.translate(x, y); ctx.rotate(-0.32);
+  // --- note glyph pieces (spacing comes from x; these convey rhythmic value) ---
+  function drawNoteHead(ctx, x, y, color, hollow, noteRx, noteRy) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(-0.32);
     ctx.beginPath(); ctx.ellipse(0, 0, noteRx, noteRy, 0, 0, 7);
-    if (g.hollow) { ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke(); }
+    if (hollow) { ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke(); }
     else { ctx.fillStyle = color; ctx.fill(); }
     ctx.restore();
-    // augmentation dot, in the space to the right of the head
-    if (g.dotted) {
-      ctx.fillStyle = color;
+  }
+  function drawDot(ctx, x, y, gap, color, noteRx) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(x + noteRx + gap * 0.55, y - gap * 0.3, gap * 0.16, gap * 0.16, 0, 0, 7);
+    ctx.fill();
+  }
+  function stemX(x, up, noteRx) { return up ? x + noteRx - 0.5 : x - noteRx + 0.5; }
+  function drawStem(ctx, x, y, color, up, tipY, noteRx) {
+    const sx = stemX(x, up, noteRx);
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(sx, y); ctx.lineTo(sx, tipY); ctx.stroke();
+    return sx;
+  }
+  function drawFlags(ctx, sx, tipY, gap, color, flags, up) {
+    ctx.fillStyle = color;
+    const dir = up ? 1 : -1; // flag hooks to the right, curving back toward the head
+    for (let k = 0; k < flags; k++) {
+      const fy = tipY + dir * k * gap * 0.62;
       ctx.beginPath();
-      ctx.ellipse(x + noteRx + gap * 0.55, y - gap * 0.3, gap * 0.16, gap * 0.16, 0, 0, 7);
-      ctx.fill();
+      ctx.moveTo(sx, fy);
+      ctx.quadraticCurveTo(sx + gap * 1.15, fy + dir * gap * 0.55, sx + gap * 0.95, fy + dir * gap * 1.55);
+      ctx.quadraticCurveTo(sx + gap * 0.7, fy + dir * gap * 0.8, sx, fy + dir * gap * 0.72);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+
+  // Draw stems, flags and beams for a time-ordered list of on-screen notes.
+  // items: [{n, x, y, step, color}]. middleFor(item) gives the staff middle step
+  // used to decide stem direction. Consecutive flagged notes within the same
+  // quarter-beat are beamed; lone flagged notes get flags; longer notes get a
+  // plain stem; whole notes get none. (Noteheads/dots are drawn by the caller.)
+  function drawStemsAndBeams(ctx, items, gap, middleFor, noteRx, stemLen) {
+    const beamable = (it) => { const g = rhythmGlyph(it.n.dur); return g.flags >= 1 && g.stem; };
+    let i = 0;
+    while (i < items.length) {
+      const it = items[i], g = rhythmGlyph(it.n.dur);
+      if (!beamable(it)) {                       // quarter / half / dotted / whole
+        if (g.stem) { const up = it.step < middleFor(it); drawStem(ctx, it.x, it.y, it.color, up, up ? it.y - stemLen : it.y + stemLen, noteRx); }
+        i++; continue;
+      }
+      let j = i + 1;
+      while (j < items.length && beamable(items[j]) && Math.floor(items[j].n.beat) === Math.floor(it.n.beat)) j++;
+      const run = items.slice(i, j);
+      if (run.length === 1) {                    // lone flagged note → flag
+        const up = it.step < middleFor(it);
+        const tipY = up ? it.y - stemLen : it.y + stemLen;
+        const sx = drawStem(ctx, it.x, it.y, it.color, up, tipY, noteRx);
+        drawFlags(ctx, sx, tipY, gap, it.color, g.flags, up);
+      } else {                                   // beam the run
+        let sSum = 0, mSum = 0;
+        run.forEach((r) => { sSum += r.step; mSum += middleFor(r); });
+        const up = sSum / run.length < mSum / run.length;
+        const beamY = up ? Math.min(...run.map((r) => r.y)) - stemLen : Math.max(...run.map((r) => r.y)) + stemLen;
+        const color = run[0].color;
+        const sx = run.map((r) => drawStem(ctx, r.x, r.y, color, up, beamY, noteRx));
+        ctx.strokeStyle = color; ctx.lineWidth = gap * 0.34; ctx.lineCap = 'butt';
+        ctx.beginPath(); ctx.moveTo(sx[0], beamY); ctx.lineTo(sx[sx.length - 1], beamY); ctx.stroke();
+        // secondary beam between adjacent sixteenths (flags >= 2)
+        const sec = beamY + (up ? gap * 0.5 : -gap * 0.5);
+        for (let k = 0; k < run.length - 1; k++) {
+          if (rhythmGlyph(run[k].n.dur).flags >= 2 && rhythmGlyph(run[k + 1].n.dur).flags >= 2) {
+            ctx.beginPath(); ctx.moveTo(sx[k], sec); ctx.lineTo(sx[k + 1], sec); ctx.stroke();
+          }
+        }
+      }
+      i = j;
     }
   }
 
@@ -171,6 +206,7 @@
       this.tempo = null;             // adaptive tempo (beats/sec), set on first update
       this.clearRate = null;         // measured beats-of-music cleared per second
       this._clearedBeats = 0;        // beats cleared since last frame (filled by tap handlers)
+      this._everCleared = false;     // has the player cleared any note yet? (warm-up gate)
       this._leadEMA = null;          // smoothed nearest-note lead (emergency-brake signal)
       this._avgDur = PATTERN_AVG_DUR; // avg note duration of current tune
       this._rhythmBuf = [];          // streamed rhythm pattern
@@ -359,9 +395,13 @@
 
       // Measured elimination rate: beats of music the player cleared per second
       // (accumulated by handleTap/handleMic), exponentially windowed over CLEAR_TAU.
-      const instRate = this._clearedBeats / dt;
+      // Guard dt>0 — the first frame has dt=0, and 0/0 would poison the rate (and
+      // hence tempo/clock) with NaN, freezing every note off-screen.
+      if (dt > 0) {
+        const instRate = this._clearedBeats / dt;
+        this.clearRate += (instRate - this.clearRate) * (1 - Math.exp(-dt / CLEAR_TAU));
+      }
       this._clearedBeats = 0;
-      this.clearRate += (instRate - this.clearRate) * (1 - Math.exp(-dt / CLEAR_TAU));
 
       // lead = how far the nearest unread note is from the play line (beats), smoothed.
       const lead = this.notes.length ? Math.max(0, this.notes[0].beat - this.clock) : (aheadBeats + 2);
@@ -373,7 +413,12 @@
       // so probe a little ABOVE it to discover how much faster they can go.
       const clearLead = (aheadBeats - 1) * CLEAR_FRAC + 1; // "screen cleared" lead
       const screenCleared = this._leadEMA > clearLead;
-      const target = screenCleared ? Math.min(TEMPO_MAX, this.clearRate * PROBE_MUL + PROBE_ADD) : this.clearRate;
+      // Warm-up: hold the preset pace until the player has cleared their first
+      // note (so the screen doesn't crawl while they get going). The emergency
+      // brake still keeps notes from barraging the line if they never engage.
+      const target = !this._everCleared ? (NPS_PRESETS[this.settings.speed] || 0.6)
+        : screenCleared ? Math.min(TEMPO_MAX, this.clearRate * PROBE_MUL + PROBE_ADD)
+        : this.clearRate;
       this.tempo += (target - this.tempo) * (1 - Math.exp(-dt / TEMPO_TAU));
       // Emergency brake: a note is about to cross and the rate signal hasn't caught up.
       if (this._leadEMA < BRAKE_LEAD) this.tempo *= Math.exp(-DOWN_RATE * Math.pow(1 - this._leadEMA / BRAKE_LEAD, DOWN_EXP) * dt);
@@ -457,7 +502,7 @@
         this.hits++;
         this.peakScore = Math.max(this.peakScore, this.score);
         const cleared = this.notes.shift();
-        this._clearedBeats += cleared.dur || 1; // feed the elimination-rate estimate
+        this._clearedBeats += cleared.dur || 1; this._everCleared = true; // feed the rate estimate
         return { result: 'good', note: cleared.note, multiplier: mult };
       }
       this.score = Math.max(0, this.score - 1);
@@ -479,7 +524,7 @@
         this.hits++; this.attempts++;
         this.peakScore = Math.max(this.peakScore, this.score);
         const cleared = this.notes.shift();
-        this._clearedBeats += cleared.dur || 1; // feed the elimination-rate estimate
+        this._clearedBeats += cleared.dur || 1; this._everCleared = true; // feed the rate estimate
         return { result: 'good', note: cleared.note, multiplier: mult };
       }
       return null;
@@ -526,12 +571,14 @@
 
       // notes
       const noteRx = gap * 0.62, noteRy = gap * 0.5;
+      const items = [];
       this.notes.forEach((n, i) => {
         if (n.x < rect.x - 40 || n.x > rect.x + rect.w + 60) return;
         const step = n.note.step;
         const y = yFor(step);
         const isActive = i === 0;
         const color = isActive ? STAFF.noteActive : STAFF.note;
+        items.push({ n, x: n.x, y, step, color });
 
         // ledger lines
         ctx.strokeStyle = color; ctx.lineWidth = 1.4;
@@ -553,9 +600,10 @@
           ctx.fillText(glyph, n.x - noteRx - 3, y);
         }
 
-        // stem + notehead + flags + augmentation dot (conveys the rhythmic value)
-        const stemUp = step < middleStep;
-        drawNoteShape(ctx, n.x, y, gap, color, n.dur, stemUp, noteRx, noteRy, gap * 3.2);
+        // notehead + augmentation dot (stems/flags/beams drawn together below)
+        const rg = rhythmGlyph(n.dur);
+        drawNoteHead(ctx, n.x, y, color, rg.hollow, noteRx, noteRy);
+        if (rg.dotted) drawDot(ctx, n.x, y, gap, color, noteRx);
 
         // active-note name label when hints on
         if (isActive && this.settings.showHints) {
@@ -565,6 +613,8 @@
           ctx.fillText(n.note.label + n.note.octave, n.x, rect.y + rect.h - 4);
         }
       });
+      // stems, flags and beams for the whole visible run
+      drawStemsAndBeams(ctx, items, gap, () => middleStep, noteRx, gap * 3.2);
     }
 
     // Grand staff: treble (top) + bass (bottom) sharing one continuous scale,
@@ -604,6 +654,7 @@
       drawKeySig(ctx, sf, KS_BASS, rect.x + gap * 3.8, gap * 0.95, yFor, gap, STAFF.clef);
 
       const noteRx = gap * 0.62, noteRy = gap * 0.5;
+      const items = [];
       this.notes.forEach((n, i) => {
         if (n.x < rect.x - 40 || n.x > rect.x + rect.w + 60) return;
         const step = n.note.step;
@@ -612,7 +663,7 @@
         const color = isActive ? STAFF.noteActive : STAFF.note;
         const treble = n.note.midi >= 60;
         const homeLines = treble ? trebleLines : bassLines;
-        const homeMiddle = treble ? 34 : 22;
+        items.push({ n, x: n.x, y, step, color, mid: treble ? 34 : 22 });
 
         ctx.strokeStyle = color; ctx.lineWidth = 1.4;
         const topL = homeLines[homeLines.length - 1], botL = homeLines[0];
@@ -627,8 +678,9 @@
           ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
           ctx.fillText(glyph, n.x - noteRx - 3, y);
         }
-        const stemUp = step < homeMiddle;
-        drawNoteShape(ctx, n.x, y, gap, color, n.dur, stemUp, noteRx, noteRy, gap * 3);
+        const rg = rhythmGlyph(n.dur);
+        drawNoteHead(ctx, n.x, y, color, rg.hollow, noteRx, noteRy);
+        if (rg.dotted) drawDot(ctx, n.x, y, gap, color, noteRx);
 
         if (isActive && this.settings.showHints) {
           ctx.fillStyle = STAFF.noteActive; ctx.font = `700 ${gap * 1.05}px ui-sans-serif,system-ui`;
@@ -636,6 +688,8 @@
           ctx.fillText(n.note.label + n.note.octave, n.x, rect.y + rect.h - 3);
         }
       });
+      // stems, flags and beams (stem direction uses each note's home clef middle)
+      drawStemsAndBeams(ctx, items, gap, (it) => it.mid, noteRx, gap * 3);
     }
   }
 
