@@ -30,6 +30,7 @@
   // their capacity, so we LOCK there (with a small comfort margin) and hold it —
   // that locked tempo is the pace they can comfortably play at. A miss eases it down.
   const TEMPO_TAU = 0.8;             // s: how gently the tempo eases toward its target
+  const RECOVER_TAU = 0.3;           // s: faster ease when speeding BACK UP after a dip
   const RAMP = 0.12;                 // /s: upward probe rate while converging (e^(RAMP·dt))
   const CLEAR_TAU = 1.2;             // s: window for the measured beats-cleared/sec
   const LANE_TAU = 0.8;              // s: smoothing of the lag signal
@@ -383,9 +384,13 @@
       // Musical clock at the play line, advancing at an ADAPTIVE tempo that tracks
       // the player's measured note-elimination rate, so it converges on (and stays
       // at) their natural reading speed. The beat grid stays stationary.
-      const pxPerBeat = Math.max(72, Math.min(150, rect.w * BEAT_PX));
       const missX = this._missX(rect);
-      const aheadBeats = (rect.x + rect.w - missX) / pxPerBeat + 1;
+      // Size pxPerBeat so the read-ahead (judge → right edge) shows a FULL BAR plus
+      // a beat of margin — so an entire bar is on screen the moment the game starts,
+      // on any screen width. Spacing stays proportional to rhythm (px is constant).
+      const readAheadW = rect.x + rect.w - missX;
+      const pxPerBeat = Math.max(55, Math.min(150, readAheadW / (this._barBeats() + 1)));
+      const aheadBeats = readAheadW / pxPerBeat + 1;
       // Notes are tapped as they cross the middle (missX) but only FAIL once they
       // run off the left edge of the staff. graceBeats = middle → that miss line.
       const graceBeats = (missX - (rect.x + this._clefW(rect))) / pxPerBeat;
@@ -415,7 +420,10 @@
       if (!this._everCleared) {
         this.tempo += ((NPS_PRESETS[this.settings.speed] || 0.6) - this.tempo) * (1 - Math.exp(-dt / TEMPO_TAU));
       } else if (this._tempoLocked) {
-        this.tempo += (this._lockedTempo - this.tempo) * (1 - Math.exp(-dt / TEMPO_TAU));
+        // hold the found tempo; recover (speed back up) faster than it eased down,
+        // so getting back to the middle promptly returns you to pace
+        const tau = this.tempo < this._lockedTempo ? RECOVER_TAU : TEMPO_TAU;
+        this.tempo += (this._lockedTempo - this.tempo) * (1 - Math.exp(-dt / tau));
       } else if (this._laneEMA > LANE_CEIL) {
         this._tempoLocked = true; this._lockedTempo = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, this.clearRate * LOCK_BACKOFF)); // capacity found
       } else {
