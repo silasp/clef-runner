@@ -24,15 +24,22 @@
   // duration, so dense tunes auto-slow but still hit the notes/sec target.
   const BEAT_PX = 0.15;              // beat-line spacing as a fraction of width
   const MAX_CLICKS_PER_SEC_GAP = 0.5; // ensure a click at least every 0.5s (>=2/s)
-  // adaptive tempo controller (rubber-bands scroll speed to the player's pace)
-  const CROWD_LEAD = 2.4;            // beats: below this the nearest note is crowding → slow
-  const CLEAR_FRAC = 0.85;          // speed up only once the nearest note sits past this
-                                    // fraction of the read zone (the screen is cleared)
-  const LEAD_TAU = 0.8;              // s: smoothing of the lead signal (gradual)
-  const DOWN_RATE = 3.0;             // max slow-down rate, reached only AT the play line
-  const DOWN_EXP = 2;                // quadratic curve: gentle for mild lag, firm only when
-                                     // a note is about to cross (avoids the dramatic yank)
-  const UP_RATE = 0.22;              // tempo speed-up rate (gentle — gradual catch-up)
+  // Adaptive tempo controller. The player clears notes by tapping the right
+  // pitch (no timing gate), so the rate at which they eliminate notes — beats of
+  // music cleared per second — IS their natural reading speed. The tempo eases
+  // toward that measured rate; when the player out-runs the supply and clears the
+  // screen, we probe upward to discover their true pace; a quadratic emergency
+  // brake catches a note about to cross when the rate signal lags.
+  const CLEAR_TAU = 2.0;             // s: window for the measured beats-cleared/sec
+  const TEMPO_TAU = 0.8;             // s: how gently the tempo eases toward its target
+  const PROBE_MUL = 1.5;             // when the screen is cleared, aim above the measured
+  const PROBE_ADD = 0.25;            // rate (×MUL + ADD b/s) to probe for spare capacity
+  const CLEAR_FRAC = 0.85;          // "screen cleared" = nearest note past this fraction of
+                                    // the read zone (or none left) → probe upward
+  const LEAD_TAU = 0.8;              // s: smoothing of the lead signal
+  const BRAKE_LEAD = 1.0;            // beats: emergency brake only once a note is this close
+  const DOWN_RATE = 2.5;             // emergency brake strength (reached AT the play line)
+  const DOWN_EXP = 2;                // quadratic: gentle entry, firm only when about to cross
   const MISS_SLOW = 0.9;             // extra tempo cut on a missed note (gentle dip)
   const TEMPO_MIN = 0.12, TEMPO_MAX = 4.0; // beats/sec bounds
   // "lick" rhythm patterns (in quarter-note beats) used for random / generated
@@ -105,7 +112,9 @@
       this.clock = null;             // musical beats elapsed at the play line
       this.songBeat = 0;             // running onset beat for spawning
       this.tempo = null;             // adaptive tempo (beats/sec), set on first update
-      this._leadEMA = null;          // smoothed nearest-note lead (control signal)
+      this.clearRate = null;         // measured beats-of-music cleared per second
+      this._clearedBeats = 0;        // beats cleared since last frame (filled by tap handlers)
+      this._leadEMA = null;          // smoothed nearest-note lead (emergency-brake signal)
       this._avgDur = PATTERN_AVG_DUR; // avg note duration of current tune
       this._rhythmBuf = [];          // streamed rhythm pattern
       this.key = T.keySig(0);        // current key signature (C major)
@@ -281,33 +290,37 @@
       this.lastTime = now;
       if (dt > 0.1) dt = 0.1; // clamp after tab switch
 
-      // Musical clock at the play line, advancing at an ADAPTIVE tempo that
-      // rubber-bands to the player's reading pace: it slows when notes crowd the
-      // play line, and speeds up only once the screen is fully cleared, so it
-      // converges on the player's natural speed. The beat grid stays stationary.
+      // Musical clock at the play line, advancing at an ADAPTIVE tempo that tracks
+      // the player's measured note-elimination rate, so it converges on (and stays
+      // at) their natural reading speed. The beat grid stays stationary.
       const pxPerBeat = Math.max(72, Math.min(150, rect.w * BEAT_PX));
       const missX = this._missX(rect);
       const aheadBeats = (rect.x + rect.w - missX) / pxPerBeat + 1;
       if (this.tempo === null) this.tempo = NPS_PRESETS[this.settings.speed] || 0.6; // starting pace
+      if (this.clearRate === null) this.clearRate = this.tempo; // start the rate estimate at the preset
       if (this.clock === null) this.clock = -Math.min(aheadBeats, 2.5); // short lead-in
 
-      // lead = how far the nearest unread note is from the play line (beats).
-      // Deadband controller: slow (gently for mild lag, firmly only as a note nears
-      // the play line — a quadratic curve, so no dramatic yank); hold
-      // steady through the comfortable middle; speed up (gently) ONLY once the
-      // player has cleared the whole queue — the nearest note has scrolled off to
-      // the far-right sliver of the read zone (or none are left). That way a
-      // comfortable lead alone never accelerates; only an empty screen does.
-      // Misses (handled below) also slow it. Smoothed for a gradual feel.
+      // Measured elimination rate: beats of music the player cleared per second
+      // (accumulated by handleTap/handleMic), exponentially windowed over CLEAR_TAU.
+      const instRate = this._clearedBeats / dt;
+      this._clearedBeats = 0;
+      this.clearRate += (instRate - this.clearRate) * (1 - Math.exp(-dt / CLEAR_TAU));
+
+      // lead = how far the nearest unread note is from the play line (beats), smoothed.
       const lead = this.notes.length ? Math.max(0, this.notes[0].beat - this.clock) : (aheadBeats + 2);
-      const a = 1 - Math.exp(-dt / LEAD_TAU);
-      this._leadEMA = this._leadEMA === null ? lead : this._leadEMA + (lead - this._leadEMA) * a;
-      // "cleared" = nearest note past CLEAR_FRAC of the read zone (screenBeats = aheadBeats-1)
-      const clearLead = (aheadBeats - 1) * CLEAR_FRAC + 1;
-      let rate = 0;
-      if (this._leadEMA < CROWD_LEAD) rate = -DOWN_RATE * Math.pow(1 - this._leadEMA / CROWD_LEAD, DOWN_EXP);
-      else if (this._leadEMA > clearLead) rate = UP_RATE; // screen cleared → gradual catch-up
-      this.tempo = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, this.tempo * Math.exp(rate * dt)));
+      this._leadEMA = this._leadEMA === null ? lead : this._leadEMA + (lead - this._leadEMA) * (1 - Math.exp(-dt / LEAD_TAU));
+
+      // Target the player's pace. Normally that's their measured clearing rate (so the
+      // tempo slows/holds exactly to what they're reading). But when they out-run the
+      // supply and clear the screen, the measured rate is capped by the tempo itself —
+      // so probe a little ABOVE it to discover how much faster they can go.
+      const clearLead = (aheadBeats - 1) * CLEAR_FRAC + 1; // "screen cleared" lead
+      const screenCleared = this._leadEMA > clearLead;
+      const target = screenCleared ? Math.min(TEMPO_MAX, this.clearRate * PROBE_MUL + PROBE_ADD) : this.clearRate;
+      this.tempo += (target - this.tempo) * (1 - Math.exp(-dt / TEMPO_TAU));
+      // Emergency brake: a note is about to cross and the rate signal hasn't caught up.
+      if (this._leadEMA < BRAKE_LEAD) this.tempo *= Math.exp(-DOWN_RATE * Math.pow(1 - this._leadEMA / BRAKE_LEAD, DOWN_EXP) * dt);
+      this.tempo = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, this.tempo));
 
       this.clock += dt * this.tempo;
       this._pxPerBeat = pxPerBeat;
@@ -387,6 +400,7 @@
         this.hits++;
         this.peakScore = Math.max(this.peakScore, this.score);
         const cleared = this.notes.shift();
+        this._clearedBeats += cleared.dur || 1; // feed the elimination-rate estimate
         return { result: 'good', note: cleared.note, multiplier: mult };
       }
       this.score = Math.max(0, this.score - 1);
@@ -408,6 +422,7 @@
         this.hits++; this.attempts++;
         this.peakScore = Math.max(this.peakScore, this.score);
         const cleared = this.notes.shift();
+        this._clearedBeats += cleared.dur || 1; // feed the elimination-rate estimate
         return { result: 'good', note: cleared.note, multiplier: mult };
       }
       return null;
