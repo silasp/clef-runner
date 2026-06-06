@@ -24,6 +24,14 @@
   // duration, so dense tunes auto-slow but still hit the notes/sec target.
   const BEAT_PX = 0.15;              // beat-line spacing as a fraction of width
   const MAX_CLICKS_PER_SEC_GAP = 0.5; // ensure a click at least every 0.5s (>=2/s)
+  // adaptive tempo controller (rubber-bands scroll speed to the player's pace)
+  const CROWD_LEAD = 2.4;            // beats: below this the nearest note is crowding → slow
+  const IDLE_LEAD = 3.8;             // beats: above this the read zone is empty → speed up
+  const LEAD_TAU = 0.8;              // s: smoothing of the lead signal (gradual)
+  const DOWN_RATE = 2.2;             // tempo slow-down rate (firm — avoid the miss barrage)
+  const UP_RATE = 0.38;              // tempo speed-up rate (gentle)
+  const MISS_SLOW = 0.8;             // extra tempo cut on a missed note
+  const TEMPO_MIN = 0.12, TEMPO_MAX = 4.0; // beats/sec bounds
   // "lick" rhythm patterns (in quarter-note beats) used for random / generated
   // notes and any lick that doesn't carry its own rhythm.
   const RHYTHM_PATTERNS = [
@@ -93,10 +101,13 @@
       this.currentLickSource = '';
       this.clock = null;             // musical beats elapsed at the play line
       this.songBeat = 0;             // running onset beat for spawning
+      this.tempo = null;             // adaptive tempo (beats/sec), set on first update
+      this._leadEMA = null;          // smoothed nearest-note lead (control signal)
       this._avgDur = PATTERN_AVG_DUR; // avg note duration of current tune
       this._rhythmBuf = [];          // streamed rhythm pattern
       this.key = T.keySig(0);        // current key signature (C major)
       this._clickUnit = null;        // last fired metronome subdivision index
+      this._clicksPerBeat = null;    // current metronome clicks-per-beat
     }
 
     _barBeats() {
@@ -267,15 +278,29 @@
       this.lastTime = now;
       if (dt > 0.1) dt = 0.1; // clamp after tab switch
 
-      // Musical clock at the play line. Tempo (beats/sec) = notes/sec × avg note
-      // duration, so the notes/sec target holds and dense tunes auto-slow.
-      const nps = NPS_PRESETS[this.settings.speed] || 1;
-      const beatsPerSec = (this._avgDur || 1) * nps;
+      // Musical clock at the play line, advancing at an ADAPTIVE tempo that
+      // rubber-bands to the player's reading pace: it speeds up when the screen
+      // empties (notes cleared) and slows when notes crowd the play line, so it
+      // converges on the player's natural speed. The beat grid stays stationary.
       const pxPerBeat = Math.max(72, Math.min(150, rect.w * BEAT_PX));
       const missX = this._missX(rect);
       const aheadBeats = (rect.x + rect.w - missX) / pxPerBeat + 1;
-      if (this.clock === null) this.clock = -Math.min(aheadBeats, 2.5); // short lead-in before the first note
-      this.clock += dt * beatsPerSec;
+      if (this.tempo === null) this.tempo = NPS_PRESETS[this.settings.speed] || 0.6; // starting pace
+      if (this.clock === null) this.clock = -Math.min(aheadBeats, 2.5); // short lead-in
+
+      // lead = how far the nearest unread note is from the play line (beats).
+      // Deadband controller: slow (hard) when a note crowds the play line, speed
+      // up (gently) when the read zone empties, hold in between → converges on the
+      // player's pace. Misses (handled below) also slow it. Smoothed for gradual feel.
+      const lead = this.notes.length ? Math.max(0, this.notes[0].beat - this.clock) : (aheadBeats + 2);
+      const a = 1 - Math.exp(-dt / LEAD_TAU);
+      this._leadEMA = this._leadEMA === null ? lead : this._leadEMA + (lead - this._leadEMA) * a;
+      let rate = 0;
+      if (this._leadEMA < CROWD_LEAD) rate = -DOWN_RATE * (1 - this._leadEMA / CROWD_LEAD);
+      else if (this._leadEMA > IDLE_LEAD) rate = UP_RATE * Math.min(1, (this._leadEMA - IDLE_LEAD) / IDLE_LEAD);
+      this.tempo = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, this.tempo * Math.exp(rate * dt)));
+
+      this.clock += dt * this.tempo;
       this._pxPerBeat = pxPerBeat;
       this._clock = this.clock;
 
@@ -293,6 +318,7 @@
         this.score = Math.max(0, this.score - 1);
         this.streak = 0;
         this.misses++;
+        this.tempo = Math.max(TEMPO_MIN, this.tempo * MISS_SLOW); // a miss → ease off the tempo
         events.push({ type: 'miss', note: lost.note });
         if (this.settings.livesMode) {
           this.lives--;
@@ -300,17 +326,20 @@
         }
       }
 
-      // metronome: click on a subdivision (>=2/s); louder on bar, medium on beat
-      const subdiv = clickSubdiv(beatsPerSec);
-      const unit = Math.floor(this.clock / subdiv + 1e-6);
+      // metronome: clicks-per-beat is a power of two giving >=2 clicks/sec at the
+      // current (adaptive) tempo. Beat/bar clicks always land on integer beats
+      // (aligned with the grid + notes); subdivisions fill in. Resync on a rate
+      // change so a tempo shift never fires a burst.
+      const n = Math.max(1, Math.round(1 / clickSubdiv(this.tempo)));
+      if (this._clicksPerBeat !== n) { this._clicksPerBeat = n; this._clickUnit = Math.floor(this.clock * n); }
+      const unit = Math.floor(this.clock * n);
       if (this._clickUnit === null) this._clickUnit = unit;
       const bb = this._barBeats();
       while (this._clickUnit < unit) {
         this._clickUnit++;
-        const beatPos = this._clickUnit * subdiv;
-        if (beatPos >= 0) {
-          const onBeat = Math.abs(beatPos - Math.round(beatPos)) < 1e-6;
-          const onBar = onBeat && (Math.round(beatPos) % bb) === 0;
+        if (this._clickUnit >= 0) {
+          const onBeat = (this._clickUnit % n) === 0;
+          const onBar = onBeat && ((this._clickUnit / n) % bb) === 0;
           events.push({ type: 'beat', level: onBar ? 'bar' : onBeat ? 'beat' : 'sub' });
         }
       }
