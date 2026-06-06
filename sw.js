@@ -1,5 +1,5 @@
 /* sw.js — offline cache. Bump CACHE when files change. */
-const CACHE = 'clef-runner-v18';
+const CACHE = 'clef-runner-v19';
 // Precache the app shell + small data. The big sharded song library
 // (js/data/<genre>.<n>.js, ~25MB) is NOT precached — it loads on demand and is
 // runtime-cached by the fetch handler below on first use.

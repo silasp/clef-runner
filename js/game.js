@@ -23,7 +23,6 @@
   // (and thus scroll speed + click rate) = notes/sec × the tune's avg note
   // duration, so dense tunes auto-slow but still hit the notes/sec target.
   const BEAT_PX = 0.15;              // beat-line spacing as a fraction of width
-  const MAX_CLICKS_PER_SEC_GAP = 0.5; // ensure a click at least every 0.5s (>=2/s)
   // Adaptive tempo controller. The player clears notes by tapping the right
   // pitch (no timing gate), so the rate at which they eliminate notes — beats of
   // music cleared per second — IS their natural reading speed. The tempo eases
@@ -68,13 +67,6 @@
     if (accidental === keyAcc) return null;        // covered by key signature
     if (accidental === 0) return '♮';              // natural cancels a key accidental
     return accidental === 1 ? '♯' : '♭';
-  }
-  // Click subdivision per beat: a power of two giving at least 2 clicks/sec.
-  function clickSubdiv(beatsPerSec) {
-    const beatSec = 1 / Math.max(0.01, beatsPerSec);
-    let n = 1;
-    while (beatSec / n > MAX_CLICKS_PER_SEC_GAP && n < 16) n *= 2; // 1,2,4,8,16 per beat
-    return 1 / n; // subdivision length in beats
   }
   // stationary vertical beat/bar ruler (lines fixed; notes scroll across them)
   function drawGrid(ctx, missX, pxPerBeat, barBeats, xMax, yTop, yBot) {
@@ -211,8 +203,7 @@
       this._avgDur = PATTERN_AVG_DUR; // avg note duration of current tune
       this._rhythmBuf = [];          // streamed rhythm pattern
       this.key = T.keySig(0);        // current key signature (C major)
-      this._clickUnit = null;        // last fired metronome subdivision index
-      this._clicksPerBeat = null;    // current metronome clicks-per-beat
+      this._clickUnit = null;        // last fired metronome beat index
     }
 
     _barBeats() {
@@ -450,21 +441,16 @@
         }
       }
 
-      // metronome: clicks-per-beat is a power of two giving >=2 clicks/sec at the
-      // current (adaptive) tempo. Beat/bar clicks always land on integer beats
-      // (aligned with the grid + notes); subdivisions fill in. Resync on a rate
-      // change so a tempo shift never fires a burst.
-      const n = Math.max(1, Math.round(1 / clickSubdiv(this.tempo)));
-      if (this._clicksPerBeat !== n) { this._clicksPerBeat = n; this._clickUnit = Math.floor(this.clock * n); }
-      const unit = Math.floor(this.clock * n);
+      // metronome: one click per quarter-note beat (lands on each integer beat,
+      // aligned with the grid + notes); the bar downbeat is accented.
+      const unit = Math.floor(this.clock);
       if (this._clickUnit === null) this._clickUnit = unit;
       const bb = this._barBeats();
       while (this._clickUnit < unit) {
         this._clickUnit++;
         if (this._clickUnit >= 0) {
-          const onBeat = (this._clickUnit % n) === 0;
-          const onBar = onBeat && ((this._clickUnit / n) % bb) === 0;
-          events.push({ type: 'beat', level: onBar ? 'bar' : onBeat ? 'beat' : 'sub' });
+          const onBar = (this._clickUnit % bb) === 0;
+          events.push({ type: 'beat', level: onBar ? 'bar' : 'beat' });
         }
       }
 
