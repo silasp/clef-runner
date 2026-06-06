@@ -58,7 +58,7 @@
           </div>
           <div class="setting">
             <div class="row"><label>Reading speed</label></div>
-            <div class="desc">Notes per second — Relaxed 0.2 · Steady 1 · Brisk 2 · Intense 4 (dense tunes auto-slow)</div>
+            <div class="desc">Starting tempo — Relaxed 40 · Steady 60 · Brisk 90 · Intense 120 BPM · adjust it live &amp; it drifts ±1 every 10 right/wrong notes</div>
             <div class="segmented" id="segSpeed" style="margin-top:10px;">
               <button data-v="relaxed">Relaxed</button><button data-v="steady" class="on">Steady</button><button data-v="brisk">Brisk</button><button data-v="intense">Intense</button>
             </div>
@@ -125,6 +125,11 @@
         <div class="stat streak"><span class="k">Streak</span><span class="v" id="hudStreak">0</span></div>
         <span class="mult" id="hudMult" style="visibility:hidden;">×2</span>
         <div class="grow lickbar" id="hudLick"></div>
+        <div class="tempo-ctl">
+          <button class="t-btn" id="tempoDown" aria-label="Slower tempo">−</button>
+          <span class="t-readout"><span class="k">Tempo</span><span class="v"><span id="hudBpm">60</span> BPM</span></span>
+          <button class="t-btn" id="tempoUp" aria-label="Faster tempo">+</button>
+        </div>
         <div class="stat" id="hudAccWrap"><span class="k">Accuracy</span><span class="v" id="hudAcc">100%</span></div>
         <div class="lives" id="hudLives" style="display:none;"></div>
         <button class="icon-btn" id="menuBtn" aria-label="Menu">☰</button>

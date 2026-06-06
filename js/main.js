@@ -201,6 +201,7 @@
     if (mult > 1) { mEl.textContent = '×' + mult; mEl.style.visibility = 'visible'; }
     else mEl.style.visibility = 'hidden';
     $('hudAcc').textContent = game.accuracy() + '%';
+    if (game.bpm != null) $('hudBpm').textContent = game.bpm;
     const lick = $('hudLick');
     if (state.settings.mode === 'licks' && game.currentLickName) {
       lick.innerHTML = '♪ <b>' + escapeHtml(game.currentLickName) + '</b>' +
@@ -436,6 +437,8 @@
     };
 
     $('startBtn').onclick = startGame;
+    $('tempoDown').onclick = () => { game.adjustBpm(-5); updateHud(); };
+    $('tempoUp').onclick = () => { game.adjustBpm(5); updateHud(); };
     $('pauseBtn').onclick = pauseGame;
     $('menuBtn').onclick = quitToMenu;
     $('resumeBtn').onclick = resumeGame;
