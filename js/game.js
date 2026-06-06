@@ -23,24 +23,25 @@
   // (and thus scroll speed + click rate) = notes/sec × the tune's avg note
   // duration, so dense tunes auto-slow but still hit the notes/sec target.
   const BEAT_PX = 0.15;              // beat-line spacing as a fraction of width
-  // Adaptive tempo controller. The player clears notes by tapping the right
-  // pitch (no timing gate), so the rate at which they eliminate notes — beats of
-  // music cleared per second — IS their natural reading speed. The tempo eases
-  // toward that measured rate; when the player out-runs the supply and clears the
-  // screen, we probe upward to discover their true pace; a quadratic emergency
-  // brake catches a note about to cross when the rate signal lags.
-  const CLEAR_TAU = 2.0;             // s: window for the measured beats-cleared/sec
+  // Adaptive tempo controller — "converge then hold". The player taps each note
+  // as it crosses the middle. While converging, the tempo gently RAMPS UP; the
+  // moment notes start drifting past the middle untapped (the player is saturated
+  // = at their limit), their MEASURED clearing rate (clearRate, beats/sec) is
+  // their capacity, so we LOCK there (with a small comfort margin) and hold it —
+  // that locked tempo is the pace they can comfortably play at. A miss eases it down.
   const TEMPO_TAU = 0.8;             // s: how gently the tempo eases toward its target
-  const PROBE_MUL = 1.5;             // when the screen is cleared, aim above the measured
-  const PROBE_ADD = 0.25;            // rate (×MUL + ADD b/s) to probe for spare capacity
-  const CLEAR_FRAC = 0.85;          // "screen cleared" = nearest note past this fraction of
-                                    // the read zone (or none left) → probe upward
-  const LEAD_TAU = 0.8;              // s: smoothing of the lead signal
-  const BRAKE_LEAD = 1.0;            // beats: emergency brake only once a note is this close
-  const DOWN_RATE = 2.5;             // emergency brake strength (reached AT the play line)
-  const DOWN_EXP = 2;                // quadratic: gentle entry, firm only when about to cross
+  const RAMP = 0.12;                 // /s: upward probe rate while converging (e^(RAMP·dt))
+  const CLEAR_TAU = 1.2;             // s: window for the measured beats-cleared/sec
+  const LANE_TAU = 0.8;              // s: smoothing of the lag signal
+  const LANE_CEIL = 0.8;             // beats of lag (notes past the middle) = saturated → lock
+  const LOCK_BACKOFF = 0.85;         // lock this fraction of the measured capacity (comfort margin)
+  const BRAKE_LEAD = 1.0;            // beats: emergency brake once a note nears the left miss line
+  const DOWN_RATE = 2.5;             // emergency brake strength (reached AT the miss line)
+  const DOWN_EXP = 2;                // quadratic: gentle entry, firm only when about to be lost
   const MISS_SLOW = 0.9;             // extra tempo cut on a missed note (gentle dip)
   const TEMPO_MIN = 0.12, TEMPO_MAX = 4.0; // beats/sec bounds
+  const LOCK_DROP = 0.9;             // ease the locked tempo down this much per miss (struggling)
+  const INITIAL_LEAD = 0.5;          // beats of run-up before the 1st note reaches the judge
   // "lick" rhythm patterns (in quarter-note beats) used for random / generated
   // notes and any lick that doesn't carry its own rhythm.
   const RHYTHM_PATTERNS = [
@@ -69,10 +70,13 @@
     return accidental === 1 ? '♯' : '♭';
   }
   // stationary vertical beat/bar ruler (lines fixed; notes scroll across them)
-  function drawGrid(ctx, missX, pxPerBeat, barBeats, xMax, yTop, yBot) {
-    for (let k = 1; missX + k * pxPerBeat <= xMax + 1; k++) {
+  function drawGrid(ctx, missX, pxPerBeat, barBeats, xMin, xMax, yTop, yBot) {
+    const kStart = Math.ceil((xMin - missX) / pxPerBeat);
+    const kEnd = Math.floor((xMax - missX) / pxPerBeat);
+    for (let k = kStart; k <= kEnd; k++) {
+      if (k === 0) continue; // the judge line at k=0 is drawn separately
       const x = missX + k * pxPerBeat;
-      const bar = (k % barBeats) === 0;
+      const bar = ((k % barBeats) + barBeats) % barBeats === 0;
       ctx.strokeStyle = bar ? STAFF.barLine : STAFF.beatLine;
       ctx.lineWidth = bar ? 1.6 : 1;
       ctx.beginPath(); ctx.moveTo(x, yTop); ctx.lineTo(x, yBot); ctx.stroke();
@@ -196,10 +200,12 @@
       this.clock = null;             // musical beats elapsed at the play line
       this.songBeat = 0;             // running onset beat for spawning
       this.tempo = null;             // adaptive tempo (beats/sec), set on first update
-      this.clearRate = null;         // measured beats-of-music cleared per second
+      this.clearRate = 0.5;          // measured beats-of-music cleared per second (= capacity)
       this._clearedBeats = 0;        // beats cleared since last frame (filled by tap handlers)
       this._everCleared = false;     // has the player cleared any note yet? (warm-up gate)
-      this._leadEMA = null;          // smoothed nearest-note lead (emergency-brake signal)
+      this._tempoLocked = false;     // has the comfortable tempo been found & locked?
+      this._lockedTempo = null;      // the held tempo once converged
+      this._laneEMA = null;          // smoothed lag (how far the active note is past the middle)
       this._avgDur = PATTERN_AVG_DUR; // avg note duration of current tune
       this._rhythmBuf = [];          // streamed rhythm pattern
       this.key = T.keySig(0);        // current key signature (C major)
@@ -380,60 +386,71 @@
       const pxPerBeat = Math.max(72, Math.min(150, rect.w * BEAT_PX));
       const missX = this._missX(rect);
       const aheadBeats = (rect.x + rect.w - missX) / pxPerBeat + 1;
+      // Notes are tapped as they cross the middle (missX) but only FAIL once they
+      // run off the left edge of the staff. graceBeats = middle → that miss line.
+      const graceBeats = (missX - (rect.x + this._clefW(rect))) / pxPerBeat;
       if (this.tempo === null) this.tempo = NPS_PRESETS[this.settings.speed] || 0.6; // starting pace
-      if (this.clearRate === null) this.clearRate = this.tempo; // start the rate estimate at the preset
-      if (this.clock === null) this.clock = -Math.min(aheadBeats, 2.5); // short lead-in
+      if (this.clock === null) this.clock = -INITIAL_LEAD; // short run-up; the spawner fills the right half
 
-      // Measured elimination rate: beats of music the player cleared per second
-      // (accumulated by handleTap/handleMic), exponentially windowed over CLEAR_TAU.
-      // Guard dt>0 — the first frame has dt=0, and 0/0 would poison the rate (and
-      // hence tempo/clock) with NaN, freezing every note off-screen.
+      // Measured clearing rate = beats of music the player taps away per second
+      // (accumulated by the tap handlers), windowed over CLEAR_TAU. When the player
+      // is saturated (a backlog has formed), this equals their reading capacity.
+      // Guard dt>0 (first frame dt=0 would make 0/0 = NaN and freeze everything).
       if (dt > 0) {
         const instRate = this._clearedBeats / dt;
         this.clearRate += (instRate - this.clearRate) * (1 - Math.exp(-dt / CLEAR_TAU));
       }
       this._clearedBeats = 0;
 
-      // lead = how far the nearest unread note is from the play line (beats), smoothed.
-      const lead = this.notes.length ? Math.max(0, this.notes[0].beat - this.clock) : (aheadBeats + 2);
-      this._leadEMA = this._leadEMA === null ? lead : this._leadEMA + (lead - this._leadEMA) * (1 - Math.exp(-dt / LEAD_TAU));
+      // "Lag" = how far the leftmost un-tapped note has drifted PAST the middle
+      // (beats). ~0 when tapping on time at the judge; grows once the tempo outpaces
+      // their reading and a backlog forms. Smoothed — the saturation signal.
+      const laneError = this.notes.length ? Math.max(0, this.clock - this.notes[0].beat) : 0;
+      this._laneEMA = this._laneEMA === null ? laneError : this._laneEMA + (laneError - this._laneEMA) * (1 - Math.exp(-dt / LANE_TAU));
 
-      // Target the player's pace. Normally that's their measured clearing rate (so the
-      // tempo slows/holds exactly to what they're reading). But when they out-run the
-      // supply and clear the screen, the measured rate is capped by the tempo itself —
-      // so probe a little ABOVE it to discover how much faster they can go.
-      const clearLead = (aheadBeats - 1) * CLEAR_FRAC + 1; // "screen cleared" lead
-      const screenCleared = this._leadEMA > clearLead;
-      // Warm-up: hold the preset pace until the player has cleared their first
-      // note (so the screen doesn't crawl while they get going). The emergency
-      // brake still keeps notes from barraging the line if they never engage.
-      const target = !this._everCleared ? (NPS_PRESETS[this.settings.speed] || 0.6)
-        : screenCleared ? Math.min(TEMPO_MAX, this.clearRate * PROBE_MUL + PROBE_ADD)
-        : this.clearRate;
-      this.tempo += (target - this.tempo) * (1 - Math.exp(-dt / TEMPO_TAU));
-      // Emergency brake: a note is about to cross and the rate signal hasn't caught up.
-      if (this._leadEMA < BRAKE_LEAD) this.tempo *= Math.exp(-DOWN_RATE * Math.pow(1 - this._leadEMA / BRAKE_LEAD, DOWN_EXP) * dt);
+      // Converge → hold. Warm-up at the preset until the first clear; then gently
+      // RAMP the tempo up to find their limit; once a backlog forms (saturated),
+      // their measured clearRate IS their capacity, so LOCK at clearRate·BACKOFF
+      // and hold it. A miss later eases the locked tempo down (miss loop).
+      if (!this._everCleared) {
+        this.tempo += ((NPS_PRESETS[this.settings.speed] || 0.6) - this.tempo) * (1 - Math.exp(-dt / TEMPO_TAU));
+      } else if (this._tempoLocked) {
+        this.tempo += (this._lockedTempo - this.tempo) * (1 - Math.exp(-dt / TEMPO_TAU));
+      } else if (this._laneEMA > LANE_CEIL) {
+        this._tempoLocked = true; this._lockedTempo = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, this.clearRate * LOCK_BACKOFF)); // capacity found
+      } else {
+        this.tempo = Math.min(TEMPO_MAX, this.tempo * Math.exp(RAMP * dt)); // probe upward
+      }
+      // Emergency brake: the leftmost note is nearing the miss line (left edge),
+      // so slow down to give the player a chance before it's lost.
+      const missLead = this.notes.length ? (this.notes[0].beat - this.clock) + graceBeats : 999;
+      if (missLead < BRAKE_LEAD) { const f = Math.max(0, Math.min(1, 1 - missLead / BRAKE_LEAD)); this.tempo *= Math.exp(-DOWN_RATE * f * f * dt); }
       this.tempo = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, this.tempo));
 
       this.clock += dt * this.tempo;
       this._pxPerBeat = pxPerBeat;
       this._clock = this.clock;
 
-      // position notes from their beat onset (stationary grid: x = playLine + (beat-now)·pxPerBeat)
+      // spawn enough to fill the right half AND at least one full bar (so a bar's
+      // worth of notes is on screen right after the countdown)
+      this._refillQueue();
+      const fillBeats = Math.max(aheadBeats, this._barBeats());
+      let guard = 0;
+      while (this.songBeat < this.clock + fillBeats && guard++ < 64) { if (!this._spawnNext()) break; }
+
+      // position all notes (including the just-spawned ones, so the right half is
+      // filled on the very first frame): x = judge + (beat - now)·pxPerBeat
       this.notes.forEach((n) => { n.x = missX + (n.beat - this.clock) * pxPerBeat; });
 
-      // spawn upcoming notes within the look-ahead window
-      this._refillQueue();
-      let guard = 0;
-      while (this.songBeat < this.clock + aheadBeats && guard++ < 64) { if (!this._spawnNext()) break; }
-
-      // miss: leftmost note scrolled past the play line (small grace beyond it)
-      while (this.notes.length && this.notes[0].beat < this.clock - 0.18) {
+      // miss: a note ran all the way off the left edge of the staff without being
+      // tapped (it could pass the middle freely — only the left edge fails it)
+      while (this.notes.length && this.notes[0].beat < this.clock - graceBeats) {
         const lost = this.notes.shift();
         this.score = Math.max(0, this.score - 1);
         this.streak = 0;
         this.misses++;
         this.tempo = Math.max(TEMPO_MIN, this.tempo * MISS_SLOW); // a miss → ease off the tempo
+        if (this._tempoLocked) this._lockedTempo = Math.max(TEMPO_MIN, this._lockedTempo * LOCK_DROP); // struggling → hold lower
         events.push({ type: 'miss', note: lost.note });
         if (this.settings.livesMode) {
           this.lives--;
@@ -465,7 +482,22 @@
       this.instrument.setHighlight(m);
     }
 
-    _missX(rect) { return rect.x + this._clefW(rect) + 6; }
+    // Tempo readout (BPM): dim while the comfortable tempo is still being found,
+    // accented once it's locked. ♩ = quarter-note beats/min = tempo(b/s) × 60.
+    _drawTempoBadge(ctx, rect) {
+      if (this.tempo == null) return;
+      const bpm = Math.round(this.tempo * 60);
+      ctx.save();
+      ctx.font = '600 13px ui-sans-serif,system-ui';
+      ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+      ctx.fillStyle = this._tempoLocked ? STAFF.noteActive : 'rgba(174,182,198,0.55)';
+      ctx.fillText('♩ = ' + bpm + (this._tempoLocked ? '' : ' …'), rect.x + rect.w - 12, rect.y + 8);
+      ctx.restore();
+    }
+
+    // Judge line at the horizontal middle: notes approach from the right (the
+    // read-ahead, pre-filled at start) and the player taps each as it crosses here.
+    _missX(rect) { return rect.x + Math.max(this._clefW(rect) + 12, rect.w * 0.5); }
     // reserve room for the clef + up to 4 key-signature accidentals (fixed, so
     // the play line stays put even as the key changes between phrases).
     _clefW(rect) {
@@ -488,7 +520,7 @@
         this.hits++;
         this.peakScore = Math.max(this.peakScore, this.score);
         const cleared = this.notes.shift();
-        this._clearedBeats += cleared.dur || 1; this._everCleared = true; // feed the rate estimate
+        this._clearedBeats += cleared.dur || 1; this._everCleared = true; // feed capacity + end warm-up
         return { result: 'good', note: cleared.note, multiplier: mult };
       }
       this.score = Math.max(0, this.score - 1);
@@ -510,7 +542,7 @@
         this.hits++; this.attempts++;
         this.peakScore = Math.max(this.peakScore, this.score);
         const cleared = this.notes.shift();
-        this._clearedBeats += cleared.dur || 1; this._everCleared = true; // feed the rate estimate
+        this._clearedBeats += cleared.dur || 1; this._everCleared = true; // feed capacity + end warm-up
         return { result: 'good', note: cleared.note, multiplier: mult };
       }
       return null;
@@ -528,15 +560,16 @@
       const clefW = this._clefW(rect);
       const missX = this._missX(rect);
 
-      // danger zone + play line at the left
+      // beat ruler, the miss line (left edge of the staff content) with a danger
+      // band, and the tap-target line at the middle
+      const px = this._pxPerBeat || rect.w * BEAT_PX;
+      const missLineX = rect.x + clefW; // notes fail once they run past here
       ctx.fillStyle = STAFF.danger;
-      ctx.fillRect(rect.x, rect.y, missX - rect.x, rect.h);
+      ctx.fillRect(missLineX, rect.y, Math.min(60, px), rect.h);
+      drawGrid(ctx, missX, px, this._barBeats(), missLineX, rect.x + rect.w, yFor(middleStep + 5.5), yFor(middleStep - 5.5));
       ctx.strokeStyle = STAFF.playLine;
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(missX, rect.y + 4); ctx.lineTo(missX, rect.y + rect.h - 4); ctx.stroke();
-
-      // stationary beat/bar ruler (drawn under the staff lines + notes)
-      drawGrid(ctx, missX, this._pxPerBeat || rect.w * BEAT_PX, this._barBeats(), rect.x + rect.w, yFor(middleStep + 5.5), yFor(middleStep - 5.5));
+      ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(missLineX, rect.y + 4); ctx.lineTo(missLineX, rect.y + rect.h - 4); ctx.stroke();
+      ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(missX, rect.y + 4); ctx.lineTo(missX, rect.y + rect.h - 4); ctx.stroke();
 
       // staff lines (full width)
       ctx.lineWidth = 1.4; ctx.strokeStyle = STAFF.line;
@@ -601,6 +634,7 @@
       });
       // stems, flags and beams for the whole visible run
       drawStemsAndBeams(ctx, items, gap, () => middleStep, noteRx, gap * 3.2);
+      this._drawTempoBadge(ctx, rect);
     }
 
     // Grand staff: treble (top) + bass (bottom) sharing one continuous scale,
@@ -614,12 +648,14 @@
       const clefW = this._clefW(rect);
       const missX = this._missX(rect);
 
-      ctx.fillStyle = STAFF.danger; ctx.fillRect(rect.x, rect.y, missX - rect.x, rect.h);
-      ctx.strokeStyle = STAFF.playLine; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(missX, rect.y + 4); ctx.lineTo(missX, rect.y + rect.h - 4); ctx.stroke();
-
+      const px = this._pxPerBeat || rect.w * BEAT_PX;
+      const missLineX = rect.x + clefW; // notes fail once they run past here
+      ctx.fillStyle = STAFF.danger; ctx.fillRect(missLineX, rect.y, Math.min(60, px), rect.h);
       // stationary beat/bar ruler spanning both staves
-      drawGrid(ctx, missX, this._pxPerBeat || rect.w * BEAT_PX, this._barBeats(), rect.x + rect.w, yFor(40), yFor(16));
+      drawGrid(ctx, missX, px, this._barBeats(), missLineX, rect.x + rect.w, yFor(40), yFor(16));
+      ctx.strokeStyle = STAFF.playLine;
+      ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(missLineX, rect.y + 4); ctx.lineTo(missLineX, rect.y + rect.h - 4); ctx.stroke();
+      ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(missX, rect.y + 4); ctx.lineTo(missX, rect.y + rect.h - 4); ctx.stroke();
 
       ctx.lineWidth = 1.3; ctx.strokeStyle = STAFF.line;
       trebleLines.concat(bassLines).forEach((s) => {
@@ -676,6 +712,7 @@
       });
       // stems, flags and beams (stem direction uses each note's home clef middle)
       drawStemsAndBeams(ctx, items, gap, (it) => it.mid, noteRx, gap * 3);
+      this._drawTempoBadge(ctx, rect);
     }
   }
 
