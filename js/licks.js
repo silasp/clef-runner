@@ -161,6 +161,28 @@
     return out;
   }
 
+  // Selectable catalogue for the Library: the hand-curated, NAMED phrases per
+  // genre plus the folk tunes loaded at boot (the huge lazy song corpus and the
+  // procedurally-generated licks are intentionally left out — they're unnamed /
+  // too numerous to browse). Each item exposes lick() → {name, source, notes}.
+  function catalog() {
+    const out = [];
+    Object.keys(RAW).forEach((genre) => {
+      const label = (GENRES.find((g) => g.key === genre) || {}).label || genre;
+      RAW[genre].forEach((l, i) => out.push({
+        id: 'lick:' + genre + ':' + i, name: l.name, group: label, kind: 'lick',
+        lick: () => ({ name: l.name, source: l.source, notes: toNotes(l.notes), durs: l.durs || null }),
+      }));
+    });
+    if (App.FolkTunes && App.FolkTunes.count && App.FolkTunes.count()) {
+      App.FolkTunes.tunes().forEach((l, i) => out.push({
+        id: 'folk:' + i, name: l.name, group: 'Folk tunes', kind: 'lick',
+        lick: () => ({ name: l.name, source: l.source, notes: l.notes, durs: l.durs }),
+      }));
+    }
+    return out;
+  }
+
   // Transpose a lick to fit an instrument's range, then place it at a RANDOM
   // octave within the playable headroom so that, across many phrases, the licks
   // cover the instrument's FULL range instead of all clustering at its centre
@@ -203,5 +225,5 @@
     return Math.round(((loM + hiM) / 2 - (lo + hi) / 2) / 12); // can't fit → centre
   }
 
-  App.Licks = { GENRES, get, getAll, transposeToInstrument };
+  App.Licks = { GENRES, get, getAll, catalog, transposeToInstrument };
 })(window.App = window.App || {});
