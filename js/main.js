@@ -15,7 +15,7 @@
 
   const state = {
     inst: 'piano',
-    settings: { mode: 'random', genre: 'blues', difficulty: 'medium', speed: 'steady', clef: 'treble', showHints: false, sound: true, livesMode: false, randomKey: false, timeSig: '4/4', mic: false, metronome: false },
+    settings: { mode: 'random', genre: 'blues', difficulty: 'medium', speed: 'steady', clef: 'treble', showHints: false, sound: true, livesMode: false, randomKey: false, timeSig: '4/4', mic: false, metronome: false, scaleTypes: ['major'], libraryIds: [] },
   };
   const micState = { lastFire: null, stableMidi: null, stableCount: 0, silentFrames: 0, armed: true, frame: 0 };
   let game = new App.Game();
@@ -29,6 +29,8 @@
       const s = JSON.parse(localStorage.getItem('sr.settings'));
       if (s) Object.assign(state.settings, s);
       state.settings.mic = false; // never auto-grab the mic on load
+      // imported files live only for the session — drop stale file: picks on load
+      state.settings.libraryIds = (state.settings.libraryIds || []).filter((id) => !String(id).startsWith('file:'));
       const i = localStorage.getItem('sr.inst');
       if (i && DEFS[i === 'pianoBass' ? 'piano' : i]) state.inst = i === 'pianoBass' ? 'piano' : i;
     } catch (e) {}
@@ -203,7 +205,7 @@
     $('hudAcc').textContent = game.accuracy() + '%';
     if (game.bpm != null) $('hudBpm').textContent = game.bpm;
     const lick = $('hudLick');
-    if (state.settings.mode === 'licks' && game.currentLickName) {
+    if (state.settings.mode !== 'random' && game.currentLickName) {
       lick.innerHTML = '♪ <b>' + escapeHtml(game.currentLickName) + '</b>' +
         (game.currentLickSource ? ' <span class="src">· ' + escapeHtml(game.currentLickSource) + '</span>' : '');
     } else { lick.textContent = ''; }
@@ -381,13 +383,113 @@
     document.querySelectorAll('#genreChips button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.settings.genre));
   }
   function updateModeVisibility() {
-    $('genreSetting').style.display = state.settings.mode === 'licks' ? '' : 'none';
+    const m = state.settings.mode;
+    $('genreSetting').style.display = m === 'licks' ? '' : 'none';
+    $('scalesSetting').style.display = m === 'scales' ? '' : 'none';
+    $('librarySetting').style.display = m === 'library' ? '' : 'none';
+  }
+
+  // ---- Scales style: multiselect scale-type chips, grouped by family ------
+  function renderScaleChips() {
+    const host = $('scaleChips');
+    if (!host.childElementCount && App.Scales) {
+      const groups = {};
+      App.Scales.TYPES.forEach((t) => { (groups[t.family] = groups[t.family] || []).push(t); });
+      Object.keys(groups).forEach((fam) => {
+        const wrap = el('div', 'chip-group');
+        wrap.appendChild(Object.assign(el('div', 'chip-group-label'), { textContent: fam }));
+        const seg = el('div', 'segmented wrap');
+        groups[fam].forEach((t) => {
+          const b = document.createElement('button');
+          b.dataset.k = t.key; b.textContent = t.name;
+          b.onclick = () => { toggleScaleType(t.key); };
+          seg.appendChild(b);
+        });
+        wrap.appendChild(seg);
+        host.appendChild(wrap);
+      });
+    }
+    markScaleChips();
+  }
+  function toggleScaleType(key) {
+    const set = new Set(state.settings.scaleTypes || []);
+    if (set.has(key)) set.delete(key); else set.add(key);
+    if (!set.size) set.add(key); // keep at least one selected
+    state.settings.scaleTypes = [...set];
+    saveSettings(); markScaleChips();
+  }
+  function markScaleChips() {
+    const sel = new Set(state.settings.scaleTypes || []);
+    document.querySelectorAll('#scaleChips button').forEach((b) => b.classList.toggle('on', sel.has(b.dataset.k)));
+  }
+
+  // ---- Library: search + multiselect of scales, pieces & imported files ---
+  function renderLibrary() {
+    renderLibrarySelected();
+    renderLibraryList($('librarySearch') ? $('librarySearch').value : '');
+  }
+  function renderLibrarySelected() {
+    const host = $('librarySelected'); if (!host) return;
+    host.innerHTML = '';
+    const ids = state.settings.libraryIds || [];
+    if (!ids.length) { host.innerHTML = '<span class="lib-empty">Nothing picked yet — tick items below.</span>'; return; }
+    ids.forEach((id) => {
+      const it = App.Library && App.Library.byId(id);
+      const chip = el('span', 'lib-chip');
+      chip.textContent = it ? it.name : id;
+      const x = el('button', 'lib-x'); x.textContent = '×'; x.setAttribute('aria-label', 'Remove');
+      x.onclick = () => { toggleLibraryId(id); };
+      chip.appendChild(x);
+      host.appendChild(chip);
+    });
+  }
+  function renderLibraryList(query) {
+    const host = $('libraryList'); if (!host || !App.Library) return;
+    const sel = new Set(state.settings.libraryIds || []);
+    const rows = App.Library.search(query, 200);
+    host.innerHTML = '';
+    if (!rows.length) { host.innerHTML = '<div class="lib-empty" style="padding:12px;">No matches.</div>'; return; }
+    rows.forEach((it) => {
+      const row = el('button', 'lib-row');
+      row.classList.toggle('on', sel.has(it.id));
+      row.innerHTML = '<span class="lib-check">' + (sel.has(it.id) ? '✓' : '') + '</span>' +
+        '<span class="lib-name">' + escapeHtml(it.name) + '</span>' +
+        '<span class="lib-group">' + escapeHtml(it.group) + '</span>';
+      row.onclick = () => { toggleLibraryId(it.id); };
+      host.appendChild(row);
+    });
+  }
+  function toggleLibraryId(id) {
+    const ids = (state.settings.libraryIds || []).slice();
+    const i = ids.indexOf(id);
+    if (i >= 0) ids.splice(i, 1); else ids.push(id);
+    state.settings.libraryIds = ids;
+    saveSettings(); renderLibrary();
+  }
+
+  async function openFile(file) {
+    if (!file || !App.Import) return;
+    try {
+      const piece = await App.Import.parseFile(file);
+      const item = App.Import.register(piece);
+      // auto-select it and make sure we're in Library mode
+      const ids = (state.settings.libraryIds || []).slice();
+      if (!ids.includes(item.id)) ids.push(item.id);
+      state.settings.libraryIds = ids;
+      state.settings.mode = 'library';
+      saveSettings();
+      renderSegmented('segMode', 'library'); updateModeVisibility(); renderLibrary();
+    } catch (e) {
+      window.alert('Could not open “' + file.name + '”.\n\n' + (e && e.message ? e.message : e));
+    }
   }
 
   function renderMenu() {
     renderInstrumentCards();
     renderSegmented('segMode', state.settings.mode);
     renderGenreChips();
+    renderScaleChips();
+    renderLibrary();
     updateModeVisibility();
     renderSegmented('segDifficulty', state.settings.difficulty);
     renderSegmented('segSpeed', state.settings.speed);
@@ -413,6 +515,13 @@
       b.onclick = () => { state.inst = b.dataset.inst; saveSettings(); renderInstrumentCards(); renderLeaderboard(); };
     });
     bindSeg('segMode', (v) => { state.settings.mode = v; updateModeVisibility(); });
+    const libSearch = $('librarySearch');
+    if (libSearch) libSearch.addEventListener('input', () => renderLibraryList(libSearch.value));
+    const openBtn = $('openFileBtn'), fileInput = $('fileInput');
+    if (openBtn && fileInput) {
+      openBtn.onclick = () => fileInput.click();
+      fileInput.addEventListener('change', () => { if (fileInput.files && fileInput.files[0]) openFile(fileInput.files[0]); fileInput.value = ''; });
+    }
     bindSeg('segDifficulty', (v) => { state.settings.difficulty = v; });
     bindSeg('segSpeed', (v) => { state.settings.speed = v; });
     bindSeg('segTimeSig', (v) => { state.settings.timeSig = v; });
@@ -516,7 +625,7 @@
     renderMenu();
     resize();
     if (App.FolkTunes) {
-      App.FolkTunes.onLoad(updateFolkStatus);
+      App.FolkTunes.onLoad(() => { updateFolkStatus(); if (!gameVisible()) renderLibrary(); });
       App.FolkTunes.load(1000);
       updateFolkStatus();
     }

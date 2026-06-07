@@ -38,9 +38,9 @@
         <div class="settings">
           <div class="setting">
             <div class="row"><label>Practice mode</label></div>
-            <div class="desc">Random notes, or real genre licks &amp; melodies</div>
-            <div class="segmented" id="segMode" style="margin-top:10px;">
-              <button data-v="random" class="on">Random</button><button data-v="licks">Licks</button>
+            <div class="desc">Random notes · scales &amp; arpeggios · genre licks · or your own picks from the Library</div>
+            <div class="segmented wrap" id="segMode" style="margin-top:10px;">
+              <button data-v="random" class="on">Random</button><button data-v="scales">Scales</button><button data-v="licks">Licks</button><button data-v="library">Library</button>
             </div>
           </div>
           <div class="setting" id="genreSetting" style="display:none;">
@@ -48,6 +48,19 @@
             <div class="desc">Source of the licks &amp; melodies</div>
             <div class="segmented wrap" id="genreChips" style="margin-top:10px;"></div>
             <div class="desc" id="folkStatus" style="margin-top:8px;"></div>
+          </div>
+          <div class="setting setting-wide" id="scalesSetting" style="display:none;">
+            <div class="row"><label>Scale types</label></div>
+            <div class="desc">Pick one or more — they repeat endlessly (turn on Random key below to drill every key)</div>
+            <div id="scaleChips" style="margin-top:10px;"></div>
+          </div>
+          <div class="setting setting-wide" id="librarySetting" style="display:none;">
+            <div class="row"><label>Library</label><button class="link-btn" id="openFileBtn">📂 Open file</button></div>
+            <div class="desc">Search scales &amp; pieces, tick any number — they repeat endlessly. Open a MIDI, ABC or MusicXML file to add your own (melody only).</div>
+            <input id="librarySearch" class="lib-search" type="text" placeholder="Search scales, licks, tunes…" />
+            <div class="lib-selected" id="librarySelected"></div>
+            <div class="lib-list" id="libraryList"></div>
+            <input type="file" id="fileInput" accept=".mid,.midi,.abc,.xml,.musicxml,.mxl" style="display:none;" />
           </div>
           <div class="setting">
             <div class="row"><label>Difficulty</label></div>
@@ -91,7 +104,7 @@
           </div>
           <div class="setting">
             <div class="row"><label>Random key</label><button class="toggle" id="tglRandomKey" aria-label="Toggle random key"></button></div>
-            <div class="desc">Random key signature — transposes licks, and picks a key for random notes</div>
+            <div class="desc">Random key signature — transposes licks, scales &amp; library pieces each phrase, and picks a key for random notes</div>
           </div>
           <div class="setting">
             <div class="row"><label>Metronome</label><button class="toggle" id="tglMetro" aria-label="Toggle metronome"></button></div>
@@ -199,6 +212,9 @@
   <script src="js/licks.js"></script>
   <script src="js/folktunes.js"></script>
   <script src="js/songs.js"></script>
+  <script src="js/scales.js"></script>
+  <script src="js/import.js"></script>
+  <script src="js/library.js"></script>
   <script src="js/game.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/main.js"></script>

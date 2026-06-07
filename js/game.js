@@ -211,15 +211,25 @@
         this.key = T.keySig(0);
       }
       this._buildPool();
-      if (this.mode === 'licks') this._loadGenre(this.settings.genre);
+      if (this.mode !== 'random') this._loadPool();
       this.bpm = BPM_PRESETS[this.settings.speed] || 60; // show the starting tempo before play begins
     }
 
-    // store raw (untransposed) licks; transposition happens per phrase at spawn
-    // time so random-key can pick a fresh key each phrase.
-    _loadGenre(genre) {
-      this._licks = App.Licks ? App.Licks.get(genre) : [];
+    // Build the phrase pool for the current mode. Phrases are stored untransposed;
+    // transposition happens per phrase at spawn time so random-key can pick a
+    // fresh key each phrase. Every non-random mode draws from this._licks and so
+    // repeats endlessly via _loadNextLick.
+    _loadPool() {
       this._lastLickIdx = -1;
+      const s = this.settings;
+      if (this.mode === 'scales') {
+        this._licks = App.Scales ? App.Scales.pool(s.scaleTypes) : [];
+      } else if (this.mode === 'library' || this.mode === 'file') {
+        const ids = s.libraryIds || [];
+        this._licks = App.Library ? ids.map((id) => App.Library.lick(id)).filter(Boolean) : [];
+      } else { // 'licks'
+        this._licks = App.Licks ? App.Licks.get(s.genre) : [];
+      }
     }
 
     _randSemis() {
@@ -299,7 +309,7 @@
 
     // Ensure there is at least one upcoming note queued.
     _refillQueue() {
-      if (this.mode === 'licks') {
+      if (this.mode !== 'random') {
         if (this.queue.length === 0) this._loadNextLick();
       } else {
         while (this.queue.length < 2) this.queue.push({ note: this._randNote(), dur: this._nextDur(), fifths: this.key.fifths });
