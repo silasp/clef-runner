@@ -677,6 +677,19 @@
   // debug accessor (harmless): inspect live game/instrument from the console
   App.debug = { game: () => game, instrument: () => instrument };
 
+  // Preview the celebration screens (great for browsing the world tour): call
+  // App.previewCelebrations() in the console, or open the page with #celebrate.
+  App.previewCelebrations = function (theme) {
+    if (!App.Celebrate) return;
+    App.Audio.unlock();
+    App.Celebrate.show({
+      kicker: 'PREVIEW', title: 'WORLD TOUR', sub: 'Cycling celebration screens…',
+      theme, durationMs: 6000,
+      onClose: () => setTimeout(() => App.previewCelebrations(theme), 250),
+    });
+  };
+  if (/celebrate/i.test(location.hash)) setTimeout(() => App.previewCelebrations('city'), 700);
+
   function datasetLabel(src) {
     src = src || '';
     if (/thesession/i.test(src)) return 'thesession.org';
