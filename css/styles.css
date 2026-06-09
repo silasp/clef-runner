@@ -48,6 +48,13 @@ button { font-family: inherit; cursor: pointer; }
 }
 .tagline { color: var(--muted); margin: 2px 0 18px; font-size: 14px; }
 
+.welcome-back {
+  margin: 2px 0 16px; padding: 10px 14px; border-radius: 12px;
+  font-size: 14px; font-weight: 600; color: var(--text);
+  background: linear-gradient(140deg, rgba(255,210,74,.16), rgba(47,208,122,.12));
+  border: 1px solid var(--edge);
+}
+
 .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 18px 0 10px; }
 
 .instrument-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }

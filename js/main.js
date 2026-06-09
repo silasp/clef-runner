@@ -15,7 +15,7 @@
 
   const state = {
     inst: 'piano',
-    settings: { mode: 'random', genre: 'blues', difficulty: 'medium', speed: 'steady', clef: 'treble', showHints: false, sound: true, livesMode: false, randomKey: false, timeSig: '4/4', mic: false, metronome: false, scaleTypes: ['major'], libraryIds: [] },
+    settings: { mode: 'licks', genre: 'all', difficulty: 'medium', speed: 'steady', clef: 'treble', showHints: true, sound: true, livesMode: false, randomKey: false, octaveShift: true, timeSig: '4/4', mic: false, metronome: false, scaleTypes: ['major'], libraryIds: [] },
   };
   const micState = { lastFire: null, stableMidi: null, stableCount: 0, silentFrames: 0, armed: true, frame: 0 };
   let game = new App.Game();
@@ -387,6 +387,7 @@
     $('genreSetting').style.display = m === 'licks' ? '' : 'none';
     $('scalesSetting').style.display = m === 'scales' ? '' : 'none';
     $('librarySetting').style.display = m === 'library' ? '' : 'none';
+    $('octaveSetting').style.display = m === 'random' ? 'none' : ''; // not used in random mode
   }
 
   // ---- Scales style: multiselect scale-type chips, grouped by family ------
@@ -499,10 +500,39 @@
     renderToggle('tglSound', state.settings.sound);
     renderToggle('tglLives', state.settings.livesMode);
     renderToggle('tglRandomKey', state.settings.randomKey);
+    renderToggle('tglOctave', state.settings.octaveShift);
     renderToggle('tglMetro', state.settings.metronome);
     renderToggle('tglMic', state.settings.mic);
     renderAccount();
     renderLeaderboard();
+  }
+
+  // ---- daily visit streak ("welcome back!") -------------------------------
+  // Detect a returning player via localStorage and track a day-by-day streak:
+  // same day keeps the count, a consecutive day increments it, a longer gap
+  // resets it to 1. Runs once per load.
+  function bumpDayStreak() {
+    const KEY = 'sr.visit';
+    const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (local-ish)
+    let rec = null;
+    try { rec = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+    let count = 1, returning = false;
+    if (rec && rec.last) {
+      returning = true;
+      const days = Math.round((Date.parse(todayStr) - Date.parse(rec.last)) / 86400000);
+      if (days <= 0) count = rec.count || 1;            // same day (or clock skew)
+      else if (days === 1) count = (rec.count || 0) + 1; // consecutive day → streak++
+      else count = 1;                                    // gap → streak reset
+    }
+    try { localStorage.setItem(KEY, JSON.stringify({ last: todayStr, count })); } catch (e) {}
+    return { count, returning };
+  }
+  function renderWelcome() {
+    const el = $('welcomeBack'); if (!el) return;
+    const { count, returning } = bumpDayStreak();
+    if (!returning) { el.style.display = 'none'; return; } // first-ever visit — stay quiet
+    el.style.display = '';
+    el.textContent = count > 1 ? `👋 Welcome back! ${count}-day streak 🔥` : '👋 Welcome back!';
   }
 
   // ---- small DOM helpers --------------------------------------------------
@@ -530,6 +560,7 @@
     bindToggle('tglSound', () => { state.settings.sound = !state.settings.sound; App.Audio.setEnabled(state.settings.sound); renderToggle('tglSound', state.settings.sound); });
     bindToggle('tglLives', () => { state.settings.livesMode = !state.settings.livesMode; renderToggle('tglLives', state.settings.livesMode); });
     bindToggle('tglRandomKey', () => { state.settings.randomKey = !state.settings.randomKey; renderToggle('tglRandomKey', state.settings.randomKey); });
+    bindToggle('tglOctave', () => { state.settings.octaveShift = !state.settings.octaveShift; renderToggle('tglOctave', state.settings.octaveShift); });
     bindToggle('tglMetro', () => { state.settings.metronome = !state.settings.metronome; renderToggle('tglMetro', state.settings.metronome); });
     $('tglMic').onclick = async () => {
       if (!state.settings.mic) {
@@ -622,6 +653,7 @@
     App.Audio.setEnabled(state.settings.sound);
     bind();
     initAuthAndSW();
+    renderWelcome();
     renderMenu();
     resize();
     if (App.FolkTunes) {

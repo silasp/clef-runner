@@ -41,6 +41,7 @@ Rotate to **landscape**. On a phone, use *Add to Home Screen* for a full-screen 
 | 🎼 | Treble / Bass clef (piano) |
 | 🔥 | Streaks with up to ×5 score multiplier |
 | 💡 | Hint mode — highlights where to tap + shows note names |
+| 🪜 | Octave displacement — scatters notes across octaves for ledger-line reading; on the grand staff consecutive notes alternate treble/bass clef |
 | 🔊 | Web-Audio note feedback |
 | 🏆 | Per-instrument local leaderboard + personal bests (localStorage) |
 | 👤 | Guest profiles, with **optional Google Sign-In** |
