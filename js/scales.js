@@ -48,6 +48,9 @@
 
   const DEFAULT_ROOT = 60; // C4
 
+  // Difficulty → how many octaves a scale / arpeggio should span.
+  const OCTAVES_BY_DIFFICULTY = { easy: 1, medium: 2, hard: 4 };
+
   // Render a type as an ascending-then-descending run over `octaves` octaves.
   function exercise(typeKey, rootMidi, octaves) {
     const t = BY_KEY[typeKey];
@@ -67,24 +70,46 @@
     };
   }
 
-  // Library catalogue: one selectable item per type (rendered at C4; the game
-  // transposes when random-key is on).
+  // Build an exercise positioned for a specific instrument:
+  //   • octave count comes from the difficulty (easy 1, medium 2, hard 4);
+  //   • the root is placed at the LOWEST octave the instrument can play for the
+  //     requested pitch class, giving the run the most room to ascend;
+  //   • if the run still overshoots the top of the range, the octave count is
+  //     reduced (down to 1) until the whole ascent fits in [minMidi, maxMidi].
+  // `rootPc` is a pitch class 0–11 (defaults to C). The returned exercise is
+  // already in range, so the game uses its notes directly with no octave-fitting.
+  function fitted(typeKey, inst, difficulty, rootPc) {
+    if (!BY_KEY[typeKey]) return null;
+    const lo = inst.minMidi, hi = inst.maxMidi;
+    const pc = rootPc == null ? (DEFAULT_ROOT % 12) : ((((rootPc | 0) % 12) + 12) % 12);
+    const rootMidi = lo + ((((pc - lo) % 12) + 12) % 12); // lowest playable root of this pitch class
+    let octaves = OCTAVES_BY_DIFFICULTY[difficulty] || 1;
+    while (octaves > 1 && rootMidi + 12 * octaves > hi) octaves--;
+    return exercise(typeKey, rootMidi, octaves);
+  }
+
+  // Library catalogue: one selectable item per type. The baked preview is at C4;
+  // `scaleKey` lets the game re-fit it to the instrument/difficulty when played.
   function catalog() {
     return TYPES.map((t) => ({
       id: 'scale:' + t.key,
       name: t.name,
       group: t.family,
       kind: 'scale',
-      lick: () => exercise(t.key, DEFAULT_ROOT, t.family === 'Arpeggios' ? 2 : 1),
+      lick: () => { const ex = exercise(t.key, DEFAULT_ROOT, t.family === 'Arpeggios' ? 2 : 1); if (ex) ex.scaleKey = t.key; return ex; },
     }));
   }
 
-  // Pool of exercises for the Scales style, given selected type keys.
+  // Pool for the Scales style: lightweight {scaleKey,name,source} descriptors.
+  // The game re-builds each one per phrase via fitted() so octave span tracks
+  // the difficulty and the run is placed within the instrument's range.
   function pool(typeKeys) {
     const keys = (typeKeys && typeKeys.length) ? typeKeys : ['major'];
-    return keys.map((k) => exercise(k, DEFAULT_ROOT, BY_KEY[k] && BY_KEY[k].family === 'Arpeggios' ? 2 : 1))
-      .filter(Boolean);
+    return keys.map((k) => {
+      const t = BY_KEY[k];
+      return t ? { scaleKey: k, name: t.name, source: 'scale exercise · ' + t.family.toLowerCase() } : null;
+    }).filter(Boolean);
   }
 
-  App.Scales = { TYPES, exercise, catalog, pool, byKey: (k) => BY_KEY[k] };
+  App.Scales = { TYPES, exercise, fitted, catalog, pool, byKey: (k) => BY_KEY[k] };
 })(window.App = window.App || {});

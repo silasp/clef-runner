@@ -381,14 +381,29 @@
       if (arr.length > 1) { let g = 0; while (idx === this._lastLickIdx && g++ < 5) idx = (Math.random() * arr.length) | 0; }
       this._lastLickIdx = idx;
       const l = arr[idx];
-      // thin song record from the sharded corpus — expand its MIDI/dur arrays now
-      let baseNotes = l.notes, baseDurs = l.durs;
-      if (!baseNotes && l._p) {
-        baseNotes = l._p.split(',').map((m) => T.spellMidi(+m));
-        baseDurs = l._d.split(',').map((x) => +x / (l._res || 4));
+      let transposed, baseDurs, source = l.source;
+      if (l.scaleKey && App.Scales) {
+        // Scales mode: rebuild the exercise for this phrase so its octave span
+        // follows the difficulty (easy 1 / medium 2 / hard 4) and the run is
+        // placed low enough to fit the instrument's range. Random-key picks a
+        // fresh root pitch class each phrase; otherwise it stays in C.
+        const rootPc = this.settings.randomKey ? ((Math.random() * 12) | 0) : 0;
+        const ex = App.Scales.fitted(l.scaleKey, this.instrument, this.settings.difficulty, rootPc);
+        if (!ex) { this.queue.push({ note: this._randNote(), dur: this._nextDur() }); return; }
+        transposed = ex.notes;            // already in range — no further octave-fitting
+        baseDurs = ex.durs;
+        if (rootPc) source = l.source + ' · transposed';
+      } else {
+        // thin song record from the sharded corpus — expand its MIDI/dur arrays now
+        let baseNotes = l.notes; baseDurs = l.durs;
+        if (!baseNotes && l._p) {
+          baseNotes = l._p.split(',').map((m) => T.spellMidi(+m));
+          baseDurs = l._d.split(',').map((x) => +x / (l._res || 4));
+        }
+        const semis = this.settings.randomKey ? this._randSemis() : 0;
+        transposed = App.Licks.transposeToInstrument(baseNotes, this.instrument, semis);
+        if (semis) source = l.source + ' · transposed';
       }
-      const semis = this.settings.randomKey ? this._randSemis() : 0;
-      const transposed = App.Licks.transposeToInstrument(baseNotes, this.instrument, semis);
       // optional octave displacement: scatter notes across the instrument's
       // octaves (and, on the grand staff, alternate treble/bass clef). Pitch
       // classes are unchanged, so the key estimate below is unaffected.
@@ -400,12 +415,11 @@
       this.key = T.keySig(fifths);
       const notes = midis.map((m) => T.spellMidiInKey(m, fifths));
       // fixed duration array for the whole phrase (real rhythm, or generated)
-      const durs = (baseDurs && baseDurs.length === baseNotes.length)
+      const durs = (baseDurs && baseDurs.length === transposed.length)
         ? baseDurs : notes.map(() => this._nextDur());
       // tune's average duration drives the tempo normalisation (dense → slower)
       const mean = durs.reduce((a, b) => a + b, 0) / (durs.length || 1);
       this._avgDur = Math.max(0.25, Math.min(4, mean));
-      const source = l.source + (semis ? ' · transposed' : '');
       notes.forEach((n, i) => this.queue.push({
         note: n, dur: durs[i] || 1, fifths,
         phraseStart: i === 0,
