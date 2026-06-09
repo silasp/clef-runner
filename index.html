@@ -127,8 +127,8 @@
         <div class="section-title">Player</div>
         <div class="account" id="accountBox"></div>
 
-        <div class="section-title">Leaderboard <span id="boardInst" style="color:var(--muted);text-transform:none;letter-spacing:0;"></span></div>
-        <div class="board" id="leaderboard"></div>
+        <div class="section-title">Your stats</div>
+        <div class="stats-panel" id="statsPanel"></div>
 
         <footer class="menu-footer">
           <div class="credit">Clef Runner · enjoying it? ☕ support is up top ↗</div>
@@ -207,6 +207,18 @@
     </div>
   </div>
 
+  <!-- ===== CELEBRATION ===== -->
+  <div id="celebrate">
+    <canvas id="celebrateCanvas"></canvas>
+    <div class="cel-content">
+      <div class="cel-kicker" id="celKicker">MILESTONE</div>
+      <div class="cel-title" id="celTitle">500 POINTS!</div>
+      <div class="cel-sub" id="celSub">You're on fire!</div>
+      <button class="cel-go" id="celGo">Keep playing ▶</button>
+      <div class="cel-loc" id="celLoc"></div>
+    </div>
+  </div>
+
   <script src="js/theory.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/pitch.js"></script>
@@ -223,6 +235,8 @@
   <script src="js/library.js"></script>
   <script src="js/game.js"></script>
   <script src="js/auth.js"></script>
+  <script src="js/stats.js"></script>
+  <script src="js/celebrate.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

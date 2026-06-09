@@ -199,6 +199,7 @@
       this.lives = 3;
       this.status = 'idle'; // idle | playing | paused | over
       this.lastTime = 0;
+      this.elapsedMs = 0;            // wall-clock time actually spent playing
       this.peakScore = 0;
       this.queue = [];               // upcoming notes to spawn
       this.currentLickName = '';
@@ -461,6 +462,7 @@
       let dt = (now - this.lastTime) / 1000;
       this.lastTime = now;
       if (dt > 0.1) dt = 0.1; // clamp after tab switch
+      this.elapsedMs += dt * 1000; // accrue play time only while actually playing
 
       // Musical clock at the play line, advancing at a FIXED tempo (the current
       // BPM). The beat grid stays stationary; notes scroll across it. The tempo is

@@ -260,3 +260,53 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
 .tuner .t-needle { position: absolute; left: 50%; top: -4px; width: 4px; height: 14px; background: var(--bad); border-radius: 2px; transform: translateX(-2px); transition: left .06s linear; }
 .tuner.intune .t-needle { background: var(--good); }
 .tuner .t-cents { font-size: 12px; color: var(--muted); min-width: 42px; text-align: left; font-variant-numeric: tabular-nums; }
+
+/* ---- stats panel (replaces the old leaderboard) ---- */
+.stats-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.stat-card {
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: 12px 14px;
+}
+.stat-card .k { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+.stat-card .v { font-size: 22px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.stat-card.hl { border-color: var(--accent); background: linear-gradient(140deg, rgba(255,210,74,.14), var(--panel)); }
+
+/* ---- celebration overlay ---- */
+#celebrate {
+  position: fixed; inset: 0; z-index: 9999; display: none;
+  align-items: center; justify-content: center; overflow: hidden;
+  -webkit-user-select: none; user-select: none;
+}
+#celebrate.active { display: flex; animation: celIn .35s ease; }
+@keyframes celIn { from { opacity: 0; } to { opacity: 1; } }
+#celebrateCanvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cel-content {
+  position: relative; z-index: 2; text-align: center; padding: 18px 26px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  max-width: 92vw; pointer-events: none;
+}
+.cel-kicker {
+  font-size: clamp(13px, 2.6vw, 18px); font-weight: 800; letter-spacing: 4px; text-transform: uppercase;
+  color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,.6); animation: celPop .5s .05s both;
+}
+.cel-title {
+  font-size: clamp(34px, 9vw, 80px); font-weight: 900; line-height: 1; color: #fff;
+  text-shadow: 0 3px 0 rgba(0,0,0,.25), 0 0 24px rgba(255,210,74,.7);
+  background: linear-gradient(180deg, #fff, #ffd24a); -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; animation: celPop .55s .12s both;
+}
+.cel-sub {
+  font-size: clamp(16px, 3.6vw, 26px); font-weight: 700; color: #fff;
+  text-shadow: 0 2px 12px rgba(0,0,0,.7); animation: celPop .55s .2s both;
+}
+.cel-loc {
+  font-size: clamp(12px, 2.4vw, 16px); font-weight: 600; color: rgba(255,255,255,.85);
+  text-shadow: 0 2px 8px rgba(0,0,0,.6); margin-top: 2px;
+}
+.cel-go {
+  pointer-events: auto; margin-top: 6px; border: 0; cursor: pointer;
+  background: linear-gradient(140deg, var(--accent), #ff9d3c); color: #1a1300;
+  font-size: clamp(15px, 3vw, 19px); font-weight: 800; padding: 12px 26px; border-radius: 999px;
+  box-shadow: 0 6px 22px rgba(255,176,46,.5); animation: celPop .55s .3s both;
+}
+.cel-go:active { transform: scale(.96); }
+@keyframes celPop { from { opacity: 0; transform: scale(.6) translateY(10px); } to { opacity: 1; transform: none; } }
