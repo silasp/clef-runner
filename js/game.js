@@ -113,6 +113,31 @@
     }
   }
 
+  // Active-note hint label: vertically aligned with the note (centred on its x)
+  // but kept clear of the notehead AND its stem. It sits just past the notehead
+  // on the stem-free side when there's room, and flips past the stem to the other
+  // side (e.g. above a low note that's near the bottom edge) when the preferred
+  // side would run off the staff — so the text is always readable, never on top
+  // of the note.
+  function drawHintLabel(ctx, text, x, noteY, stemUp, gap, noteRy, stemLen, color, rect) {
+    const fontPx = gap * 1.1;
+    const pad = gap * 0.6;
+    const clearUp = (stemUp ? stemLen : noteRy) + pad; // glyph extent above the head
+    const clearDn = (stemUp ? noteRy : stemLen) + pad; // glyph extent below the head
+    const top = rect.y, bot = rect.y + rect.h;
+    const aboveY = noteY - clearUp;  // baseline 'bottom' if placed above
+    const belowY = noteY + clearDn;  // baseline 'top' if placed below
+    const aboveFits = aboveY - fontPx >= top + 2;
+    const belowFits = belowY + fontPx <= bot - 2;
+    // prefer the notehead-only (stem-free) side; flip if it would clip off-staff
+    const useAbove = stemUp ? (!belowFits && aboveFits) : (aboveFits || !belowFits);
+    ctx.fillStyle = color;
+    ctx.font = `700 ${fontPx}px ui-sans-serif,system-ui`;
+    ctx.textAlign = 'center';
+    if (useAbove) { ctx.textBaseline = 'bottom'; ctx.fillText(text, x, Math.max(top + fontPx + 2, aboveY)); }
+    else { ctx.textBaseline = 'top'; ctx.fillText(text, x, Math.min(bot - fontPx - 2, belowY)); }
+  }
+
   // Draw stems, flags and beams for a time-ordered list of on-screen notes.
   // items: [{n, x, y, step, color}]. middleFor(item) gives the staff middle step
   // used to decide stem direction. Consecutive flagged notes within the same
@@ -631,13 +656,10 @@
         drawNoteHead(ctx, n.x, y, color, rg.hollow, noteRx, noteRy);
         if (rg.dotted) drawDot(ctx, n.x, y, gap, color, noteRx);
 
-        // active-note name label when hints on
-        if (isActive && this.settings.showHints) {
-          ctx.fillStyle = STAFF.noteActive;
-          ctx.font = `700 ${gap * 1.1}px ui-sans-serif,system-ui`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-          ctx.fillText(n.note.label + n.note.octave, n.x, rect.y + rect.h - 4);
-        }
+        // active-note name label when hints on — aligned with the note, kept
+        // clear of the notehead/stem (above the note when it sits low)
+        if (isActive && this.settings.showHints)
+          drawHintLabel(ctx, n.note.label + n.note.octave, n.x, y, step < middleStep, gap, noteRy, gap * 3.2, STAFF.noteActive, rect);
       });
       // stems, flags and beams for the whole visible run
       drawStemsAndBeams(ctx, items, gap, () => middleStep, noteRx, gap * 3.2);
@@ -710,11 +732,8 @@
         drawNoteHead(ctx, n.x, y, color, rg.hollow, noteRx, noteRy);
         if (rg.dotted) drawDot(ctx, n.x, y, gap, color, noteRx);
 
-        if (isActive && this.settings.showHints) {
-          ctx.fillStyle = STAFF.noteActive; ctx.font = `700 ${gap * 1.05}px ui-sans-serif,system-ui`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-          ctx.fillText(n.note.label + n.note.octave, n.x, rect.y + rect.h - 3);
-        }
+        if (isActive && this.settings.showHints)
+          drawHintLabel(ctx, n.note.label + n.note.octave, n.x, y, step < (treble ? 34 : 22), gap, noteRy, gap * 3, STAFF.noteActive, rect);
       });
       // stems, flags and beams (stem direction uses each note's home clef middle)
       drawStemsAndBeams(ctx, items, gap, (it) => it.mid, noteRx, gap * 3);
