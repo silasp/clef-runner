@@ -25,8 +25,9 @@
     return {
       name: '',
       lastScore: 0,
-      today: { date: d, timeMs: 0, score: 0 },
-      allTime: { timeMs: 0, score: 0 },
+      bestDayStreak: 0, // longest run of consecutive days played, ever
+      today: { date: d, timeMs: 0, score: 0, bestScore: 0, bestStreak: 0 },
+      allTime: { timeMs: 0, score: 0, bestStreak: 0 },
       // highest tier already celebrated (so each milestone fires exactly once)
       seen: { streak: 0, timeAll: 0, timeToday: 0, timeTodayDate: d },
     };
@@ -42,6 +43,7 @@
     s.seen = Object.assign(b.seen, s.seen || {});
     if (typeof s.name !== 'string') s.name = '';
     if (typeof s.lastScore !== 'number') s.lastScore = 0;
+    if (typeof s.bestDayStreak !== 'number') s.bestDayStreak = 0;
     return s;
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(stats)); } catch (e) {} }
@@ -49,7 +51,7 @@
   // reset the per-day buckets at midnight
   function rollDay() {
     const d = todayStr();
-    if (stats.today.date !== d) stats.today = { date: d, timeMs: 0, score: 0 };
+    if (stats.today.date !== d) stats.today = { date: d, timeMs: 0, score: 0, bestScore: 0, bestStreak: 0 };
     if (stats.seen.timeTodayDate !== d) { stats.seen.timeTodayDate = d; stats.seen.timeToday = 0; }
     return stats;
   }
@@ -70,18 +72,30 @@
       return stats.name;
     },
 
-    // Record a finished game into the running totals.
-    recordGame(score, timeMs) {
+    // Record a finished game into the running totals + bests.
+    recordGame(score, timeMs, bestStreak) {
       rollDay();
       score = Math.max(0, score | 0);
       timeMs = Math.max(0, Math.round(timeMs || 0));
+      bestStreak = Math.max(0, bestStreak | 0);
       stats.lastScore = score;
       stats.today.score += score;
       stats.today.timeMs += timeMs;
+      stats.today.bestScore = Math.max(stats.today.bestScore || 0, score);
+      stats.today.bestStreak = Math.max(stats.today.bestStreak || 0, bestStreak);
       stats.allTime.score += score;
       stats.allTime.timeMs += timeMs;
+      stats.allTime.bestStreak = Math.max(stats.allTime.bestStreak || 0, bestStreak);
       save();
       return stats;
+    },
+
+    // Track the longest run of consecutive days played (called with the current
+    // day streak each session); keeps the all-time maximum.
+    recordDayStreak(days) {
+      days = Math.max(0, days | 0);
+      if (days > (stats.bestDayStreak || 0)) { stats.bestDayStreak = days; save(); }
+      return stats.bestDayStreak;
     },
 
     // ---- milestone checks (return descriptors, recording what's been seen) ----

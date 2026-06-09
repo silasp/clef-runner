@@ -285,7 +285,7 @@
     if (gameRecorded || game.attempts <= 0) return;
     gameRecorded = true;
     const finalScore = Math.max(game.score, game.peakScore);
-    App.Stats.recordGame(finalScore, game.elapsedMs);
+    App.Stats.recordGame(finalScore, game.elapsedMs, game.bestStreak);
     App.Stats.timeMilestones().forEach((m) => celebrate(milestoneOpts(m)));
   }
 
@@ -402,8 +402,12 @@
     const cards = [
       ['Player', name || '—', false],
       ['Day streak', lastStreak + ' 🔥', lastStreak > 1],
+      ['Longest daily streak', (s.bestDayStreak || 0) + ' 🔥', false],
       ['Last score', s.lastScore.toLocaleString(), false],
-      ['Score today', s.today.score.toLocaleString(), s.today.score > 0],
+      ['Best score today', (s.today.bestScore || 0).toLocaleString(), (s.today.bestScore || 0) > 0],
+      ['Score today', s.today.score.toLocaleString(), false],
+      ['Best streak today', (s.today.bestStreak || 0) + ' 🔥', false],
+      ['Best streak all-time', (s.allTime.bestStreak || 0) + ' 🔥', (s.allTime.bestStreak || 0) > 0],
       ['Time today', fmtDur(s.today.timeMs), false],
       ['Score all-time', s.allTime.score.toLocaleString(), false],
       ['Time all-time', fmtDur(s.allTime.timeMs), false],
@@ -578,6 +582,7 @@
   function renderWelcome() {
     const { count, returning } = bumpDayStreak();
     lastStreak = count; // surfaced in the stats panel + drives the streak celebration
+    App.Stats.recordDayStreak(count); // keep the all-time longest daily streak
     const el = $('welcomeBack'); if (!el) return;
     if (!returning) { el.style.display = 'none'; return; } // first-ever visit — stay quiet
     el.style.display = '';
