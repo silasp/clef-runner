@@ -23,7 +23,6 @@
   let staffCtx, instCtx, staffRect, instRect;
   let countdownTimer = null;
   // milestone bookkeeping
-  let scoreCelebrated = 0;   // highest in-game score tier celebrated this round
   let gameRecorded = false;  // guard so a finished game is only counted once
   let lastStreak = 1;        // day-streak computed at boot (for the stats panel)
 
@@ -86,7 +85,7 @@
         const events = game.update(now, staffRect);
         game.drawStaff(staffCtx, staffRect);
         events.forEach(handleEvent);
-        if (game.status === 'playing' && !(App.Celebrate && App.Celebrate.isActive())) checkScoreMilestone();
+        if (game.status === 'playing' && !(App.Celebrate && App.Celebrate.isActive())) checkAwardDuringPlay();
       }
       if (instCtx && instrument) {
         instCtx.clearRect(0, 0, instRect.w, instRect.h);
@@ -206,6 +205,8 @@
     if (mult > 1) { mEl.textContent = '×' + mult; mEl.style.visibility = 'visible'; }
     else mEl.style.visibility = 'hidden';
     $('hudAcc').textContent = game.accuracy() + '%';
+    const toNext = App.Stats.pointsToNext(liveScore());
+    $('hudAward').textContent = toNext > 0 ? toNext.toLocaleString() + ' pts' : 'Ready! 🏆';
     if (game.bpm != null) $('hudBpm').textContent = game.bpm;
     const lick = $('hudLick');
     if (state.settings.mode !== 'random' && game.currentLickName) {
@@ -236,7 +237,7 @@
 
   async function startGame() {
     saveSettings();
-    scoreCelebrated = 0; gameRecorded = false; // fresh milestone state for this round
+    gameRecorded = false; // fresh recording state for this round
     show('game');          // make #game visible first so wrappers have real height
     // lazily load the selected genre's song shards before configuring the game
     if (state.settings.mode === 'licks' && App.Songs && App.Songs.has(state.settings.genre) && !App.Songs.loaded(state.settings.genre)) {
@@ -279,14 +280,13 @@
   }
   function resumeGame() { $('pauseOverlay').classList.remove('active'); game.resume(); }
 
-  // Fold a finished round into the local stats totals (once per game), then fire
-  // any time-played milestone celebrations it unlocked.
+  // Fold a finished round into the local stats totals (once per game). Awards are
+  // handled live during play / on first load, not here, so the menu stays calm.
   function recordGame() {
     if (gameRecorded || game.attempts <= 0) return;
     gameRecorded = true;
     const finalScore = Math.max(game.score, game.peakScore);
     App.Stats.recordGame(finalScore, game.elapsedMs, game.bestStreak);
-    App.Stats.timeMilestones().forEach((m) => celebrate(milestoneOpts(m)));
   }
 
   function endGame() {
@@ -306,49 +306,50 @@
     closeOverlays();
     show('menu');
     renderMenu();
-    checkMenuMilestones();
   }
 
   // ---- milestones & celebration screens -----------------------------------
+  // Celebrations only appear in one of two "opportunity windows" — first page
+  // load, or once enough practice has accumulated (the award window) — AND only
+  // when a milestone is actually reached. Awards are cumulative-score tiers that
+  // require progressively more effort; the window cadence scales with practice.
   function fmtDur(ms) {
     const sec = Math.floor((ms || 0) / 1000);
     if (sec >= 3600) { const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60); return m ? `${h}h ${m}m` : `${h}h`; }
     if (sec >= 60) return `${Math.floor(sec / 60)}m`;
     return `${sec}s`;
   }
-  function fmtMinutes(min) {
-    if (min >= 60 && min % 60 === 0) { const h = min / 60; return `${h} HOUR${h > 1 ? 'S' : ''}`; }
-    if (min >= 60) return `${Math.floor(min / 60)}H ${min % 60}M`;
-    return `${min} MIN`;
-  }
-  function milestoneOpts(m) {
-    if (m.kind === 'timeToday') return { kind: 'time', kicker: 'DEDICATION', title: fmtMinutes(m.value) + ' TODAY!' };
-    if (m.kind === 'timeAll') return { kind: 'time', kicker: 'GRAND TOTAL', title: fmtMinutes(m.value) + ' PLAYED!' };
-    return { title: (m.value || 0).toLocaleString() + ' POINTS!' };
-  }
   function celebrate(opts) {
     if (!App.Celebrate) return;
     App.Audio.unlock();           // let the fanfare through (resumes the audio ctx)
     App.Celebrate.show(opts);
   }
-  // In-game score milestone: pause the run, celebrate, resume when dismissed.
-  function checkScoreMilestone() {
-    const reached = App.Stats.highest(App.Stats.SCORE_TIERS, game.score);
-    if (reached <= scoreCelebrated) return;
-    scoreCelebrated = reached;
-    if (game.status === 'playing') game.pause();
-    celebrate({
-      kind: 'score', kicker: 'HIGH SCORE',
-      title: reached.toLocaleString() + ' POINTS!',
-      durationMs: 4200,
-      onClose: () => { if (gameVisible() && game.status === 'paused') game.resume(); },
-    });
+  function awardOpts(award) {
+    return { kind: 'score', kicker: 'AWARD UNLOCKED', title: award.value.toLocaleString() + ' POINTS!' };
   }
-  // Day-streak milestone, shown when the player lands back on the menu.
-  function checkMenuMilestones() {
+  // Live cumulative all-time score (recorded total + the in-progress game).
+  function liveScore() { return App.Stats.get().allTime.score + (game ? game.score : 0); }
+
+  // During practice: if the award window is open AND the cumulative-score
+  // milestone is reached, pause, celebrate, and resume when dismissed.
+  function checkAwardDuringPlay() {
+    const award = App.Stats.tryAward(liveScore(), game.elapsedMs, false);
+    if (!award) return;
+    if (game.status === 'playing') game.pause();
+    celebrate(Object.assign(awardOpts(award), {
+      durationMs: 5200,
+      onClose: () => { if (gameVisible() && game.status === 'paused') game.resume(); },
+    }));
+  }
+
+  // On first page load only: show one celebration — a day-streak milestone if
+  // one was just reached, otherwise a pending score award (window forced open).
+  function bootCelebration() {
     if (App.Celebrate && App.Celebrate.isActive()) return;
     const sm = App.Stats.streakMilestone(lastStreak);
-    if (sm) celebrate({ kind: 'streak', kicker: 'ON A ROLL', title: lastStreak + '-DAY STREAK! 🔥' });
+    if (sm) { celebrate({ kind: 'streak', kicker: 'ON A ROLL', title: lastStreak + '-DAY STREAK! 🔥' }); return; }
+    const award = App.Stats.tryAward(liveScore(), 0, true);
+    if (award) celebrate(awardOpts(award));
   }
 
   // ---- menu rendering -----------------------------------------------------
@@ -710,8 +711,8 @@
     renderWelcome();
     renderMenu();
     resize();
-    // celebrate a day-streak milestone shortly after the menu paints
-    setTimeout(checkMenuMilestones, 800);
+    // first-page-load celebration (streak milestone, or a pending score award)
+    setTimeout(bootCelebration, 800);
     if (App.FolkTunes) {
       App.FolkTunes.onLoad(() => { updateFolkStatus(); if (!gameVisible()) renderLibrary(); });
       App.FolkTunes.load(1000);

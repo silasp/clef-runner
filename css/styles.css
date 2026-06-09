@@ -310,3 +310,6 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
 }
 .cel-go:active { transform: scale(.96); }
 @keyframes celPop { from { opacity: 0; transform: scale(.6) translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* HUD "points to next award" hint */
+.hud .stat.award .v { color: var(--accent); }

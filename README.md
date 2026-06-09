@@ -44,7 +44,7 @@ Rotate to **landscape**. On a phone, use *Add to Home Screen* for a full-screen 
 | 🪜 | Octave displacement — scatters notes across octaves for ledger-line reading; on the grand staff consecutive notes alternate treble/bass clef |
 | 🔊 | Web-Audio note feedback |
 | 📊 | Local stats (localStorage) — player name, recent score, plus score & time totals for today and all-time |
-| 🎉 | Milestone **celebration screens** — colourful note-fountain animations across exotic themed scenes (space, pyramids, concert hall, under the sea, fireworks, world capitals, fanfare, aurora, beach) for big scores, day streaks & time milestones |
+| 🎉 | **Celebration screens** — colourful note-fountain animations across exotic themed scenes (space, pyramids, concert hall, under the sea, fireworks, world capitals, fanfare, aurora, beach). Paced as **awards**: cumulative-score milestones with widening gaps, shown only on first load or once enough practice accrues (cadence scales toward your median daily practice). A live "points to next award" hint keeps you going. |
 | 💾 | Remembers your settings (instrument, mode, difficulty, toggles…) between sessions |
 | 👤 | Guest profiles, with **optional Google Sign-In** |
 | 📱 | Installable PWA, offline-capable, landscape-locked |
