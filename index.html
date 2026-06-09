@@ -27,6 +27,8 @@
           <a class="coffee-btn" href="https://www.paypal.com/ncp/payment/JF4TU78UNV74J" target="_blank" rel="noopener noreferrer" title="Support development">☕ Buy me a coffee</a>
         </div>
 
+        <div class="welcome-back" id="welcomeBack" style="display:none;"></div>
+
         <div class="section-title">Choose your instrument</div>
         <div class="instrument-grid" id="instrumentGrid">
           <button class="inst-card" data-inst="piano"><span class="emoji">🎹</span><span class="label">Piano</span><span class="sub">Keyboard</span></button>
@@ -105,6 +107,10 @@
           <div class="setting">
             <div class="row"><label>Random key</label><button class="toggle" id="tglRandomKey" aria-label="Toggle random key"></button></div>
             <div class="desc">Random key signature — transposes licks, scales &amp; library pieces each phrase, and picks a key for random notes</div>
+          </div>
+          <div class="setting" id="octaveSetting" style="display:none;">
+            <div class="row"><label>Octave displacement</label><button class="toggle" id="tglOctave" aria-label="Toggle octave displacement"></button></div>
+            <div class="desc">Scatter notes across octaves for ledger-line reading · on the grand staff consecutive notes alternate treble/bass clef · not used in Random mode</div>
           </div>
           <div class="setting">
             <div class="row"><label>Metronome</label><button class="toggle" id="tglMetro" aria-label="Toggle metronome"></button></div>

@@ -113,6 +113,31 @@
     }
   }
 
+  // Active-note hint label: vertically aligned with the note (centred on its x)
+  // but kept clear of the notehead AND its stem. It sits just past the notehead
+  // on the stem-free side when there's room, and flips past the stem to the other
+  // side (e.g. above a low note that's near the bottom edge) when the preferred
+  // side would run off the staff — so the text is always readable, never on top
+  // of the note.
+  function drawHintLabel(ctx, text, x, noteY, stemUp, gap, noteRy, stemLen, color, rect) {
+    const fontPx = gap * 1.1;
+    const pad = gap * 0.6;
+    const clearUp = (stemUp ? stemLen : noteRy) + pad; // glyph extent above the head
+    const clearDn = (stemUp ? noteRy : stemLen) + pad; // glyph extent below the head
+    const top = rect.y, bot = rect.y + rect.h;
+    const aboveY = noteY - clearUp;  // baseline 'bottom' if placed above
+    const belowY = noteY + clearDn;  // baseline 'top' if placed below
+    const aboveFits = aboveY - fontPx >= top + 2;
+    const belowFits = belowY + fontPx <= bot - 2;
+    // prefer the notehead-only (stem-free) side; flip if it would clip off-staff
+    const useAbove = stemUp ? (!belowFits && aboveFits) : (aboveFits || !belowFits);
+    ctx.fillStyle = color;
+    ctx.font = `700 ${fontPx}px ui-sans-serif,system-ui`;
+    ctx.textAlign = 'center';
+    if (useAbove) { ctx.textBaseline = 'bottom'; ctx.fillText(text, x, Math.max(top + fontPx + 2, aboveY)); }
+    else { ctx.textBaseline = 'top'; ctx.fillText(text, x, Math.min(bot - fontPx - 2, belowY)); }
+  }
+
   // Draw stems, flags and beams for a time-ordered list of on-screen notes.
   // items: [{n, x, y, step, color}]. middleFor(item) gives the staff middle step
   // used to decide stem direction. Consecutive flagged notes within the same
@@ -162,7 +187,7 @@
       this.settings = {
         speed: 'steady', difficulty: 'medium', livesMode: false,
         lives: 3, showHints: false, sound: true,
-        mode: 'random', genre: 'blues', randomKey: false,
+        mode: 'random', genre: 'blues', randomKey: false, octaveShift: false,
         timeSig: '4/4',
       };
     }
@@ -185,6 +210,8 @@
       this._rhythmBuf = [];          // streamed rhythm pattern
       this.key = T.keySig(0);        // current key signature (C major)
       this._clickUnit = null;        // last fired metronome beat index
+      this._octToggle = false;       // octave-displacement clef alternation (grand)
+      this._behind = false;          // notes piling up faster than they're cleared
     }
 
     _barBeats() {
@@ -264,6 +291,33 @@
       if (this.pool.length < 2) this.pool = inst.naturals.slice();
     }
 
+    // ---- octave displacement (all modes except random) --------------------
+    // Re-place each note at a random playable octave. On the grand staff the
+    // notes are forced to alternate clefs: consecutive notes land in the treble
+    // half (>= middle C) then the bass half (< middle C), and so on.
+    _displaceOctaves(midis) {
+      const inst = this.instrument;
+      const loM = inst.minMidi, hiM = inst.maxMidi;
+      const grand = this.clef && this.clef.grand;
+      return midis.map((m) => {
+        if (grand) {
+          this._octToggle = !this._octToggle; // flip first → alternate every note
+          const placed = this._octaveInRange(m, this._octToggle ? Math.max(loM, 60) : loM,
+                                                 this._octToggle ? hiM : Math.min(hiM, 59));
+          if (placed != null) return placed;   // fall through if that half can't hold it
+        }
+        return this._octaveInRange(m, loM, hiM) ?? m;
+      });
+    }
+    // Pick a random reachable octave of m's pitch-class within [loM,hiM]; null if none.
+    _octaveInRange(m, loM, hiM) {
+      const pc = ((m % 12) + 12) % 12;
+      const opts = [];
+      for (let mm = pc; mm <= 127; mm += 12)
+        if (mm >= loM && mm <= hiM && this.instrument.reachable.has(mm)) opts.push(mm);
+      return opts.length ? opts[(Math.random() * opts.length) | 0] : null;
+    }
+
     start() {
       this.reset();
       this.lives = this.settings.lives;
@@ -286,6 +340,10 @@
     // Progressive difficulty: the tempo creeps UP 1 BPM every HITS_PER_BPM correct
     // notes, and DOWN 1 BPM every HITS_PER_BPM wrong notes (bad taps or misses).
     _tempoUpOnHit() {
+      // If notes are entering the screen faster than the player is clearing
+      // them (a backlog has built up past the judge line), hold the tempo
+      // steady instead of speeding up — don't pile on when they're behind.
+      if (this._behind) return;
       if (this.bpm != null && this.hits > 0 && this.hits % HITS_PER_BPM === 0)
         this.bpm = Math.min(BPM_MAX, this.bpm + 1);
     }
@@ -346,9 +404,13 @@
         transposed = App.Licks.transposeToInstrument(baseNotes, this.instrument, semis);
         if (semis) source = l.source + ' · transposed';
       }
+      // optional octave displacement: scatter notes across the instrument's
+      // octaves (and, on the grand staff, alternate treble/bass clef). Pitch
+      // classes are unchanged, so the key estimate below is unaffected.
+      let midis = transposed.map((n) => n.midi);
+      if (this.settings.octaveShift) midis = this._displaceOctaves(midis);
       // pick the key signature that best fits this phrase, then respell every note
       // in that key so the key signature covers the diatonic notes.
-      const midis = transposed.map((n) => n.midi);
       const fifths = T.estimateFifths(midis);
       this.key = T.keySig(fifths);
       const notes = midis.map((m) => T.spellMidiInKey(m, fifths));
@@ -431,6 +493,13 @@
       // position all notes (including the just-spawned ones, so the right half is
       // filled on the very first frame): x = judge + (beat - now)·pxPerBeat
       this.notes.forEach((n) => { n.x = missX + (n.beat - this.clock) * pxPerBeat; });
+
+      // "behind" = notes have crossed the judge line (beat < now) but haven't
+      // been cleared, so a backlog is streaming toward the miss edge faster than
+      // the player is removing them. While behind, the tempo is held steady.
+      let backlog = 0;
+      for (const n of this.notes) if (n.beat < this.clock - 1e-6) backlog++;
+      this._behind = backlog >= 2;
 
       // miss: a note ran all the way off the left edge of the staff without being
       // tapped (it could pass the middle freely — only the left edge fails it)
@@ -601,13 +670,10 @@
         drawNoteHead(ctx, n.x, y, color, rg.hollow, noteRx, noteRy);
         if (rg.dotted) drawDot(ctx, n.x, y, gap, color, noteRx);
 
-        // active-note name label when hints on
-        if (isActive && this.settings.showHints) {
-          ctx.fillStyle = STAFF.noteActive;
-          ctx.font = `700 ${gap * 1.1}px ui-sans-serif,system-ui`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-          ctx.fillText(n.note.label + n.note.octave, n.x, rect.y + rect.h - 4);
-        }
+        // active-note name label when hints on — aligned with the note, kept
+        // clear of the notehead/stem (above the note when it sits low)
+        if (isActive && this.settings.showHints)
+          drawHintLabel(ctx, n.note.label + n.note.octave, n.x, y, step < middleStep, gap, noteRy, gap * 3.2, STAFF.noteActive, rect);
       });
       // stems, flags and beams for the whole visible run
       drawStemsAndBeams(ctx, items, gap, () => middleStep, noteRx, gap * 3.2);
@@ -680,11 +746,8 @@
         drawNoteHead(ctx, n.x, y, color, rg.hollow, noteRx, noteRy);
         if (rg.dotted) drawDot(ctx, n.x, y, gap, color, noteRx);
 
-        if (isActive && this.settings.showHints) {
-          ctx.fillStyle = STAFF.noteActive; ctx.font = `700 ${gap * 1.05}px ui-sans-serif,system-ui`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-          ctx.fillText(n.note.label + n.note.octave, n.x, rect.y + rect.h - 3);
-        }
+        if (isActive && this.settings.showHints)
+          drawHintLabel(ctx, n.note.label + n.note.octave, n.x, y, step < (treble ? 34 : 22), gap, noteRy, gap * 3, STAFF.noteActive, rect);
       });
       // stems, flags and beams (stem direction uses each note's home clef middle)
       drawStemsAndBeams(ctx, items, gap, (it) => it.mid, noteRx, gap * 3);
