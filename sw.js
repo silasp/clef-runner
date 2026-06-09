@@ -1,5 +1,5 @@
 /* sw.js — offline cache. Bump CACHE when files change. */
-const CACHE = 'clef-runner-v24';
+const CACHE = 'clef-runner-v26';
 // Precache the app shell + small data. The big sharded song library
 // (js/data/<genre>.<n>.js, ~25MB) is NOT precached — it loads on demand and is
 // runtime-cached by the fetch handler below on first use.
@@ -10,7 +10,7 @@ const ASSETS = [
   './js/lickgen.js', './js/abc.js', './js/data/tunes.js', './js/data/manifest.js',
   './js/licks.js', './js/folktunes.js', './js/songs.js',
   './js/scales.js', './js/import.js', './js/library.js',
-  './js/game.js', './js/auth.js', './js/main.js',
+  './js/game.js', './js/auth.js', './js/stats.js', './js/celebrate.js', './js/main.js',
 ];
 
 self.addEventListener('install', (e) => {

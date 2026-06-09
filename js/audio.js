@@ -86,11 +86,46 @@
     o.stop(t + 0.06);
   }
 
+  // Triumphant ascending arpeggio + shimmering chord for celebration screens.
+  function fanfare() {
+    if (!enabled) return;
+    const c = ensureCtx();
+    if (!c) return;
+    const t0 = c.currentTime;
+    const run = [60, 64, 67, 72, 76, 79, 84]; // C-major arpeggio climbing up
+    run.forEach((midi, i) => {
+      const t = t0 + i * 0.11;
+      const freq = App.Theory.freqOf(midi);
+      const g = c.createGain(); g.connect(master);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.45, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+      [0, 0.5].forEach((detune, j) => {
+        const o = c.createOscillator();
+        o.type = j === 0 ? 'triangle' : 'square';
+        o.frequency.value = freq; o.detune.value = detune;
+        o.connect(g); o.start(t); o.stop(t + 0.55);
+      });
+    });
+    // sustained final chord that rings out
+    const tc = t0 + run.length * 0.11;
+    [72, 76, 79, 84].forEach((midi) => {
+      const g = c.createGain(); g.connect(master);
+      g.gain.setValueAtTime(0.0001, tc);
+      g.gain.exponentialRampToValueAtTime(0.35, tc + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, tc + 1.3);
+      const o = c.createOscillator(); o.type = 'triangle';
+      o.frequency.value = App.Theory.freqOf(midi);
+      o.connect(g); o.start(tc); o.stop(tc + 1.35);
+    });
+  }
+
   App.Audio = {
     unlock() { ensureCtx(); },
     playMidi,
     playError,
     tick,
+    fanfare,
     setEnabled(v) { enabled = !!v; },
     isEnabled() { return enabled; },
   };

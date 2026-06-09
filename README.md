@@ -43,7 +43,9 @@ Rotate to **landscape**. On a phone, use *Add to Home Screen* for a full-screen 
 | 💡 | Hint mode — highlights where to tap + shows note names |
 | 🪜 | Octave displacement — scatters notes across octaves for ledger-line reading; on the grand staff consecutive notes alternate treble/bass clef |
 | 🔊 | Web-Audio note feedback |
-| 🏆 | Per-instrument local leaderboard + personal bests (localStorage) |
+| 📊 | Local stats (localStorage) — player name, recent score, plus score & time totals for today and all-time |
+| 🎉 | Milestone **celebration screens** — colourful note-fountain animations across exotic themed scenes (space, pyramids, concert hall, under the sea, fireworks, world capitals, fanfare, aurora, beach) for big scores, day streaks & time milestones |
+| 💾 | Remembers your settings (instrument, mode, difficulty, toggles…) between sessions |
 | 👤 | Guest profiles, with **optional Google Sign-In** |
 | 📱 | Installable PWA, offline-capable, landscape-locked |
 
@@ -55,7 +57,7 @@ Local guest profiles work with zero setup. To add Google SSO:
 2. Paste the client ID into `GOOGLE_CLIENT_ID` at the top of [`js/main.js`](js/main.js).
 3. Serve over http(s) — SSO does **not** work from `file://`.
 
-> Note: scores are stored in the browser (localStorage). The Google profile personalises the name/avatar; a shared cross-device leaderboard would need a backend, which is intentionally out of scope here.
+> Note: stats are stored in the browser (localStorage) on a single device. The Google profile personalises the name/avatar; shared cross-device stats would need a backend, which is intentionally out of scope here.
 
 ## Project layout
 
@@ -65,8 +67,10 @@ css/styles.css          dark, landscape-first styling
 js/theory.js            pitch ↔ MIDI ↔ staff geometry
 js/instruments.js       piano + fretboard layout, draw, hit-testing
 js/game.js              staff rendering, scrolling notes, scoring/streaks/lives
-js/audio.js             Web-Audio synth (note + error cues)
-js/auth.js              profiles, local leaderboard, optional Google SSO
+js/audio.js             Web-Audio synth (note + error cues + fanfare)
+js/auth.js              profiles, optional Google SSO
+js/stats.js             local play stats + milestone bookkeeping (localStorage)
+js/celebrate.js         milestone celebration overlay (themed note-fountain animations)
 js/main.js              menu, settings, canvas sizing, game loop, input
 manifest.webmanifest    PWA manifest (landscape)
 sw.js                   offline cache

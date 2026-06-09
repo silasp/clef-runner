@@ -22,6 +22,10 @@
   let instrument = null;
   let staffCtx, instCtx, staffRect, instRect;
   let countdownTimer = null;
+  // milestone bookkeeping
+  let scoreCelebrated = 0;   // highest in-game score tier celebrated this round
+  let gameRecorded = false;  // guard so a finished game is only counted once
+  let lastStreak = 1;        // day-streak computed at boot (for the stats panel)
 
   // ---- persistence of settings -------------------------------------------
   function loadSettings() {
@@ -48,8 +52,6 @@
     }
     return state.inst;
   }
-  // leaderboard / personal-best key ignores clef variant
-  function boardKey() { return state.inst; }
 
   // ---- canvas sizing ------------------------------------------------------
   function fitCanvas(canvas) {
@@ -84,6 +86,7 @@
         const events = game.update(now, staffRect);
         game.drawStaff(staffCtx, staffRect);
         events.forEach(handleEvent);
+        if (game.status === 'playing' && !(App.Celebrate && App.Celebrate.isActive())) checkScoreMilestone();
       }
       if (instCtx && instrument) {
         instCtx.clearRect(0, 0, instRect.w, instRect.h);
@@ -233,6 +236,7 @@
 
   async function startGame() {
     saveSettings();
+    scoreCelebrated = 0; gameRecorded = false; // fresh milestone state for this round
     show('game');          // make #game visible first so wrappers have real height
     // lazily load the selected genre's song shards before configuring the game
     if (state.settings.mode === 'licks' && App.Songs && App.Songs.has(state.settings.genre) && !App.Songs.loaded(state.settings.genre)) {
@@ -275,34 +279,76 @@
   }
   function resumeGame() { $('pauseOverlay').classList.remove('active'); game.resume(); }
 
-  function recordIfWorthwhile() {
-    if (game.attempts <= 0) return null;
+  // Fold a finished round into the local stats totals (once per game), then fire
+  // any time-played milestone celebrations it unlocked.
+  function recordGame() {
+    if (gameRecorded || game.attempts <= 0) return;
+    gameRecorded = true;
     const finalScore = Math.max(game.score, game.peakScore);
-    return App.Auth.recordScore({
-      instrument: boardKey(),
-      difficulty: state.settings.difficulty,
-      score: finalScore,
-      bestStreak: game.bestStreak,
-      accuracy: game.accuracy(),
-    });
+    App.Stats.recordGame(finalScore, game.elapsedMs, game.bestStreak);
+    App.Stats.timeMilestones().forEach((m) => celebrate(milestoneOpts(m)));
   }
 
   function endGame() {
-    const rec = recordIfWorthwhile();
+    recordGame();
+    const s = App.Stats.get();
     $('ovScore').textContent = Math.max(game.score, game.peakScore);
     $('ovStreak').textContent = game.bestStreak;
     $('ovAcc').textContent = game.accuracy() + '%';
-    $('newBest').innerHTML = rec && rec.newBest ? '<span class="badge-new">★ New personal best!</span>' : '';
+    $('newBest').innerHTML = `<span class="badge-new">Today: ${s.today.score.toLocaleString()} pts · ${fmtDur(s.today.timeMs)}</span>`;
     $('overOverlay').classList.add('active');
   }
 
   function quitToMenu() {
     if (countdownTimer) clearTimeout(countdownTimer);
-    recordIfWorthwhile();
+    recordGame();
     game.status = 'over';
     closeOverlays();
     show('menu');
     renderMenu();
+    checkMenuMilestones();
+  }
+
+  // ---- milestones & celebration screens -----------------------------------
+  function fmtDur(ms) {
+    const sec = Math.floor((ms || 0) / 1000);
+    if (sec >= 3600) { const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60); return m ? `${h}h ${m}m` : `${h}h`; }
+    if (sec >= 60) return `${Math.floor(sec / 60)}m`;
+    return `${sec}s`;
+  }
+  function fmtMinutes(min) {
+    if (min >= 60 && min % 60 === 0) { const h = min / 60; return `${h} HOUR${h > 1 ? 'S' : ''}`; }
+    if (min >= 60) return `${Math.floor(min / 60)}H ${min % 60}M`;
+    return `${min} MIN`;
+  }
+  function milestoneOpts(m) {
+    if (m.kind === 'timeToday') return { kind: 'time', kicker: 'DEDICATION', title: fmtMinutes(m.value) + ' TODAY!' };
+    if (m.kind === 'timeAll') return { kind: 'time', kicker: 'GRAND TOTAL', title: fmtMinutes(m.value) + ' PLAYED!' };
+    return { title: (m.value || 0).toLocaleString() + ' POINTS!' };
+  }
+  function celebrate(opts) {
+    if (!App.Celebrate) return;
+    App.Audio.unlock();           // let the fanfare through (resumes the audio ctx)
+    App.Celebrate.show(opts);
+  }
+  // In-game score milestone: pause the run, celebrate, resume when dismissed.
+  function checkScoreMilestone() {
+    const reached = App.Stats.highest(App.Stats.SCORE_TIERS, game.score);
+    if (reached <= scoreCelebrated) return;
+    scoreCelebrated = reached;
+    if (game.status === 'playing') game.pause();
+    celebrate({
+      kind: 'score', kicker: 'HIGH SCORE',
+      title: reached.toLocaleString() + ' POINTS!',
+      durationMs: 4200,
+      onClose: () => { if (gameVisible() && game.status === 'paused') game.resume(); },
+    });
+  }
+  // Day-streak milestone, shown when the player lands back on the menu.
+  function checkMenuMilestones() {
+    if (App.Celebrate && App.Celebrate.isActive()) return;
+    const sm = App.Stats.streakMilestone(lastStreak);
+    if (sm) celebrate({ kind: 'streak', kicker: 'ON A ROLL', title: lastStreak + '-DAY STREAK! 🔥' });
   }
 
   // ---- menu rendering -----------------------------------------------------
@@ -348,20 +394,26 @@
     }
   }
 
-  function renderLeaderboard() {
-    const key = boardKey();
-    $('boardInst').textContent = '· ' + DEFS[key].name;
-    const rows = App.Auth.leaderboard(key, 10);
-    const board = $('leaderboard');
-    board.innerHTML = '<div class="b-row head"><span>#</span><span>Player</span><span>Streak</span><span>Score</span></div>';
-    if (!rows.length) {
-      board.insertAdjacentHTML('beforeend', '<div class="empty">No scores yet — play a round to set the pace.</div>');
-      return;
-    }
-    rows.forEach((r, i) => {
-      board.insertAdjacentHTML('beforeend',
-        `<div class="b-row"><span class="rank">${i + 1}</span><span>${escapeHtml(r.name || 'Player')}</span><span>${r.bestStreak || 0}🔥</span><span class="score">${r.score}</span></div>`);
-    });
+  function renderStats() {
+    const host = $('statsPanel'); if (!host) return;
+    const s = App.Stats.get();
+    const p = App.Auth.getProfile();
+    const name = (s.name || (p && p.name) || '').trim();
+    const cards = [
+      ['Player', name || '—', false],
+      ['Day streak', lastStreak + ' 🔥', lastStreak > 1],
+      ['Longest daily streak', (s.bestDayStreak || 0) + ' 🔥', false],
+      ['Last score', s.lastScore.toLocaleString(), false],
+      ['Best score today', (s.today.bestScore || 0).toLocaleString(), (s.today.bestScore || 0) > 0],
+      ['Score today', s.today.score.toLocaleString(), false],
+      ['Best streak today', (s.today.bestStreak || 0) + ' 🔥', false],
+      ['Best streak all-time', (s.allTime.bestStreak || 0) + ' 🔥', (s.allTime.bestStreak || 0) > 0],
+      ['Time today', fmtDur(s.today.timeMs), false],
+      ['Score all-time', s.allTime.score.toLocaleString(), false],
+      ['Time all-time', fmtDur(s.allTime.timeMs), false],
+    ];
+    host.innerHTML = cards.map(([k, v, hl]) =>
+      `<div class="stat-card${hl ? ' hl' : ''}"><div class="k">${k}</div><div class="v">${escapeHtml(String(v))}</div></div>`).join('');
   }
 
   function renderGenreChips() {
@@ -504,7 +556,7 @@
     renderToggle('tglMetro', state.settings.metronome);
     renderToggle('tglMic', state.settings.mic);
     renderAccount();
-    renderLeaderboard();
+    renderStats();
   }
 
   // ---- daily visit streak ("welcome back!") -------------------------------
@@ -528,8 +580,10 @@
     return { count, returning };
   }
   function renderWelcome() {
-    const el = $('welcomeBack'); if (!el) return;
     const { count, returning } = bumpDayStreak();
+    lastStreak = count; // surfaced in the stats panel + drives the streak celebration
+    App.Stats.recordDayStreak(count); // keep the all-time longest daily streak
+    const el = $('welcomeBack'); if (!el) return;
     if (!returning) { el.style.display = 'none'; return; } // first-ever visit — stay quiet
     el.style.display = '';
     el.textContent = count > 1 ? `👋 Welcome back! ${count}-day streak 🔥` : '👋 Welcome back!';
@@ -542,7 +596,7 @@
   // ---- event bindings -----------------------------------------------------
   function bind() {
     document.querySelectorAll('#instrumentGrid .inst-card').forEach((b) => {
-      b.onclick = () => { state.inst = b.dataset.inst; saveSettings(); renderInstrumentCards(); renderLeaderboard(); };
+      b.onclick = () => { state.inst = b.dataset.inst; saveSettings(); renderInstrumentCards(); };
     });
     bindSeg('segMode', (v) => { state.settings.mode = v; updateModeVisibility(); });
     const libSearch = $('librarySearch');
@@ -555,7 +609,7 @@
     bindSeg('segDifficulty', (v) => { state.settings.difficulty = v; });
     bindSeg('segSpeed', (v) => { state.settings.speed = v; });
     bindSeg('segTimeSig', (v) => { state.settings.timeSig = v; });
-    bindSeg('segClef', (v) => { state.settings.clef = v; renderLeaderboard(); });
+    bindSeg('segClef', (v) => { state.settings.clef = v; });
     bindToggle('tglHints', () => { state.settings.showHints = !state.settings.showHints; renderToggle('tglHints', state.settings.showHints); });
     bindToggle('tglSound', () => { state.settings.sound = !state.settings.sound; App.Audio.setEnabled(state.settings.sound); renderToggle('tglSound', state.settings.sound); });
     bindToggle('tglLives', () => { state.settings.livesMode = !state.settings.livesMode; renderToggle('tglLives', state.settings.livesMode); });
@@ -591,7 +645,7 @@
     ic.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('gesturestart', (e) => e.preventDefault());
 
-    App.Auth.onChange(() => { saveSettings(); if (gameVisible()) return; renderMenu(); });
+    App.Auth.onChange((p) => { App.Stats.setName(p ? p.name : ''); saveSettings(); if (gameVisible()) return; renderMenu(); });
   }
   function bindSeg(id, fn) {
     document.querySelectorAll('#' + id + ' button').forEach((b) => {
@@ -656,6 +710,8 @@
     renderWelcome();
     renderMenu();
     resize();
+    // celebrate a day-streak milestone shortly after the menu paints
+    setTimeout(checkMenuMilestones, 800);
     if (App.FolkTunes) {
       App.FolkTunes.onLoad(() => { updateFolkStatus(); if (!gameVisible()) renderLibrary(); });
       App.FolkTunes.load(1000);
