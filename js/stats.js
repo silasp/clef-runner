@@ -41,6 +41,18 @@
     return r;
   }
 
+  // ---- treasure economy ---------------------------------------------------
+  const SHOP = { freeze: 60 };          // gem price of a streak freeze
+  // Variable-reward payout for opening a treasure box (mostly small, rare jackpot).
+  function rollBox() {
+    const r = Math.random();
+    if (r < 0.55) return { gems: 5 + ((Math.random() * 11) | 0), tier: 'common' };
+    if (r < 0.85) return { gems: 16 + ((Math.random() * 25) | 0), tier: 'nice' };
+    if (r < 0.97) return { gems: 45 + ((Math.random() * 46) | 0), tier: 'rare' };
+    return { gems: 150 + ((Math.random() * 151) | 0), tier: 'jackpot' };
+  }
+  const cityKey = (p) => (p ? (p.city + '|' + p.country) : '');
+
   function blank() {
     const d = todayStr();
     return {
@@ -52,6 +64,11 @@
       days: [],          // total practice ms for recent completed days (for the median)
       awardsEarned: 0,   // celebration awards unlocked so far (cumulative-score tiers)
       lastAwardAtMs: 0,  // lifetime practice ms snapshot when the last award fired
+      gems: 0,           // soft currency
+      boxes: 0,          // unopened treasure boxes banked from treasure notes
+      freezes: 0,        // streak-freeze consumables owned
+      boxesOpened: 0,    // lifetime boxes opened (stat)
+      passport: {},      // "City|Country" -> times that celebration was collected
       // highest tier already celebrated (so each milestone fires exactly once)
       seen: { streak: 0, timeAll: 0, timeToday: 0, timeTodayDate: d },
     };
@@ -71,6 +88,11 @@
     if (!Array.isArray(s.days)) s.days = [];
     if (typeof s.awardsEarned !== 'number') s.awardsEarned = 0;
     if (typeof s.lastAwardAtMs !== 'number') s.lastAwardAtMs = 0;
+    if (typeof s.gems !== 'number') s.gems = 0;
+    if (typeof s.boxes !== 'number') s.boxes = 0;
+    if (typeof s.freezes !== 'number') s.freezes = 0;
+    if (typeof s.boxesOpened !== 'number') s.boxesOpened = 0;
+    if (!s.passport || typeof s.passport !== 'object') s.passport = {};
     return s;
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(stats)); } catch (e) {} }
@@ -92,8 +114,49 @@
   rollDay();
 
   const Stats = {
+    SHOP,
     get() { return rollDay(); },
     refresh() { stats = load(); rollDay(); return stats; },
+
+    // ---- treasure economy: gems, boxes, streak freezes, passport -----------
+    gems() { return stats.gems || 0; },
+    boxes() { return stats.boxes || 0; },
+    freezes() { return stats.freezes || 0; },
+    addGems(n) { stats.gems = Math.max(0, (stats.gems || 0) + (n | 0)); save(); return stats.gems; },
+    spendGems(n) { n = n | 0; if ((stats.gems || 0) < n) return false; stats.gems -= n; save(); return true; },
+    // Bank a treasure box (cleared a treasure note).
+    bankBox() { stats.boxes = (stats.boxes || 0) + 1; save(); return stats.boxes; },
+    // Open one banked box → variable gem payout. Returns {gems, tier, remaining} or null.
+    openBox() {
+      if ((stats.boxes || 0) <= 0) return null;
+      stats.boxes -= 1; stats.boxesOpened = (stats.boxesOpened || 0) + 1;
+      const roll = rollBox();
+      stats.gems = (stats.gems || 0) + roll.gems;
+      save();
+      return { gems: roll.gems, tier: roll.tier, remaining: stats.boxes };
+    },
+    // Buy a streak freeze with gems. Returns true on success.
+    buyFreeze() { if (!this.spendGems(SHOP.freeze)) return false; stats.freezes = (stats.freezes || 0) + 1; save(); return true; },
+    // Consume one streak freeze (to protect a missed day). Returns true if used.
+    useFreeze() { if ((stats.freezes || 0) <= 0) return false; stats.freezes -= 1; save(); return true; },
+
+    // Stamp a visited city into the passport. Returns {key, count, firstVisit}.
+    stampCity(place) {
+      const k = cityKey(place); if (!k) return null;
+      const first = !stats.passport[k];
+      stats.passport[k] = (stats.passport[k] || 0) + 1;
+      save();
+      return { key: k, count: stats.passport[k], firstVisit: first };
+    },
+    // Passport progress against a catalog of places (distinct City|Country).
+    passportSummary(places) {
+      const distinct = {}; (places || []).forEach((p) => { distinct[cityKey(p)] = p; });
+      const keys = Object.keys(distinct);
+      const got = keys.filter((k) => stats.passport[k]);
+      const byCountry = {};
+      keys.forEach((k) => { const c = distinct[k].country; (byCountry[c] = byCountry[c] || { got: 0, total: 0 }).total++; if (stats.passport[k]) byCountry[c].got++; });
+      return { collected: got.length, total: keys.length, byCountry, has: (k) => !!stats.passport[k] };
+    },
 
     setName(name) {
       name = (name == null ? '' : String(name)).trim().slice(0, 24);

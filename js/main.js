@@ -123,7 +123,8 @@
       instrument.flashCell(cell.id, 'good');
       flashScreen('good');
       if (state.settings.sound) App.Audio.playMidi(cell.midi);
-      showPopup(res.multiplier > 1 ? `+${res.multiplier}` : '+1', res.multiplier > 1);
+      if (res.treasure) bankTreasure();
+      else showPopup(res.multiplier > 1 ? `+${res.multiplier}` : '+1', res.multiplier > 1);
     } else {
       instrument.flashCell(cell.id, 'bad');
       flashScreen('bad');
@@ -157,7 +158,8 @@
     if (res && res.result === 'good') {
       instrument.cellsForMidi(res.note.midi).forEach((c) => instrument.flashCell(c.id, 'good'));
       flashScreen('good');
-      showPopup(res.multiplier > 1 ? `+${res.multiplier}` : '+1', res.multiplier > 1);
+      if (res.treasure) bankTreasure();
+      else showPopup(res.multiplier > 1 ? `+${res.multiplier}` : '+1', res.multiplier > 1);
       updateHud();
     }
   }
@@ -207,6 +209,7 @@
     $('hudAcc').textContent = game.accuracy() + '%';
     const toNext = App.Stats.pointsToNext(liveScore());
     $('hudAward').textContent = toNext > 0 ? toNext.toLocaleString() + ' pts' : 'Ready! 🏆';
+    const gemsEl = $('hudGems'); if (gemsEl) gemsEl.textContent = '💎 ' + App.Stats.gems() + (App.Stats.boxes() ? ' · 📦 ' + App.Stats.boxes() : '');
     if (game.bpm != null) $('hudBpm').textContent = game.bpm;
     const lick = $('hudLick');
     if (state.settings.mode !== 'random' && game.currentLickName) {
@@ -296,6 +299,8 @@
     $('ovStreak').textContent = game.bestStreak;
     $('ovAcc').textContent = game.accuracy() + '%';
     $('newBest').innerHTML = `<span class="badge-new">Today: ${s.today.score.toLocaleString()} pts · ${fmtDur(s.today.timeMs)}</span>`;
+    const ob = $('ovOpenBoxes');
+    if (ob) { const n = App.Stats.boxes(); ob.style.display = n ? '' : 'none'; ob.textContent = `🎁 Open ${n} treasure ${n === 1 ? 'box' : 'boxes'}`; }
     $('overOverlay').classList.add('active');
   }
 
@@ -417,6 +422,67 @@
     ];
     host.innerHTML = cards.map(([k, v, hl]) =>
       `<div class="stat-card${hl ? ' hl' : ''}"><div class="k">${k}</div><div class="v">${escapeHtml(String(v))}</div></div>`).join('');
+  }
+
+  // ---- treasure: gems, boxes, shop ---------------------------------------
+  function bankTreasure() {
+    App.Stats.bankBox();
+    if (state.settings.sound) { App.Audio.playMidi(88, 0.18); App.Audio.playMidi(93, 0.28); }
+    showPopup('📦 Treasure!', true);
+    updateHud();
+  }
+  // Open every banked box in turn, each as a treasure-vault celebration.
+  function openBoxes() {
+    const box = App.Stats.openBox();
+    if (!box) { updateHud(); if (!gameVisible()) renderMenu(); return; }
+    const sub = { common: 'A little something!', nice: 'Nice haul!', rare: 'A rare find!', jackpot: '💰 JACKPOT! 💰' };
+    celebrate({
+      theme: 'treasure',
+      kicker: box.tier === 'jackpot' ? 'JACKPOT' : 'TREASURE',
+      title: '+' + box.gems + ' 💎',
+      sub: sub[box.tier] || 'Treasure!',
+      durationMs: box.tier === 'jackpot' ? 5200 : 3600,
+      onClose: () => { if (App.Stats.boxes() > 0) setTimeout(openBoxes, 200); else { updateHud(); if (!gameVisible()) renderMenu(); } },
+    });
+  }
+  function renderTreasure() {
+    const host = $('treasurePanel'); if (!host) return;
+    const s = App.Stats.get();
+    const cost = App.Stats.SHOP.freeze;
+    const canFreeze = s.gems >= cost;
+    host.innerHTML =
+      `<div class="treasure-bal"><span class="t-gem">💎 ${s.gems.toLocaleString()}</span><span class="t-box">📦 ${s.boxes} ${s.boxes === 1 ? 'box' : 'boxes'}</span><span class="t-frz">🛡️ ${s.freezes}</span></div>`;
+    const open = el('button', 'btn-treasure'); open.textContent = s.boxes > 0 ? `Open ${s.boxes} treasure ${s.boxes === 1 ? 'box' : 'boxes'} 🎁` : 'No boxes yet — clear 💎 treasure notes to earn them';
+    open.disabled = s.boxes === 0; open.onclick = () => { if (App.Stats.boxes() > 0) openBoxes(); };
+    host.appendChild(open);
+    const shop = el('div', 'shop-row');
+    const buy = el('button', 'link-btn'); buy.textContent = `🛡️ Buy Streak Freeze · ${cost} 💎`;
+    buy.disabled = !canFreeze;
+    buy.onclick = () => { if (App.Stats.buyFreeze()) { if (state.settings.sound) App.Audio.playMidi(80, 0.2); renderTreasure(); renderStats(); } };
+    const hint = el('span', 'desc'); hint.textContent = 'A Streak Freeze protects your day streak if you miss a day.';
+    shop.append(buy, hint); host.appendChild(shop);
+  }
+  function renderPassport() {
+    const host = $('passportPanel'); if (!host) return;
+    const places = (App.Celebrate && App.Celebrate._debug && App.Celebrate._debug.PLACES) || [];
+    const sum = App.Stats.passportSummary(places);
+    const pct = sum.total ? Math.round((sum.collected / sum.total) * 100) : 0;
+    // distinct collected places (flag + city), with visit-count badges
+    const seen = {}; const collected = [];
+    places.forEach((p) => { const k = p.city + '|' + p.country; if (sum.has(k) && !seen[k]) { seen[k] = 1; collected.push(p); } });
+    const s = App.Stats.get();
+    let html = `<div class="pp-head"><b>${sum.collected}</b> / ${sum.total} cities collected · ${pct}%`
+      + `<div class="pp-bar"><span style="width:${pct}%"></span></div></div>`;
+    if (!collected.length) {
+      html += '<div class="lib-empty" style="padding:10px 2px;">No postcards yet — reach a milestone to tour the world and start collecting. 🌍</div>';
+    } else {
+      html += '<div class="pp-grid">' + collected.sort((a, b) => a.country.localeCompare(b.country) || a.city.localeCompare(b.city))
+        .map((p) => { const c = s.passport[p.city + '|' + p.country] || 1; return `<span class="pp-card" title="${escapeHtml(p.country)}">${p.flag} ${escapeHtml(p.city)}${c > 1 ? ` <b class="pp-n">×${c}</b>` : ''}</span>`; }).join('')
+        + '</div>';
+      const remain = sum.total - sum.collected;
+      if (remain > 0) html += `<div class="desc" style="margin-top:8px;">${remain} more ${remain === 1 ? 'city' : 'cities'} to discover…</div>`;
+    }
+    host.innerHTML = html;
   }
 
   function renderGenreChips() {
@@ -560,6 +626,8 @@
     renderToggle('tglMic', state.settings.mic);
     renderAccount();
     renderStats();
+    renderTreasure();
+    renderPassport();
   }
 
   // ---- daily visit streak ("welcome back!") -------------------------------
@@ -571,25 +639,30 @@
     const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (local-ish)
     let rec = null;
     try { rec = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
-    let count = 1, returning = false;
+    let count = 1, returning = false, froze = 0;
     if (rec && rec.last) {
       returning = true;
       const days = Math.round((Date.parse(todayStr) - Date.parse(rec.last)) / 86400000);
       if (days <= 0) count = rec.count || 1;            // same day (or clock skew)
       else if (days === 1) count = (rec.count || 0) + 1; // consecutive day → streak++
-      else count = 1;                                    // gap → streak reset
+      else {                                             // gap — try to spend Streak Freezes to bridge it
+        const missed = days - 1;
+        while (froze < missed && App.Stats.useFreeze()) froze++;
+        count = (froze >= missed) ? (rec.count || 0) + 1 : 1;
+      }
     }
     try { localStorage.setItem(KEY, JSON.stringify({ last: todayStr, count })); } catch (e) {}
-    return { count, returning };
+    return { count, returning, froze };
   }
   function renderWelcome() {
-    const { count, returning } = bumpDayStreak();
+    const { count, returning, froze } = bumpDayStreak();
     lastStreak = count; // surfaced in the stats panel + drives the streak celebration
     App.Stats.recordDayStreak(count); // keep the all-time longest daily streak
     const el = $('welcomeBack'); if (!el) return;
     if (!returning) { el.style.display = 'none'; return; } // first-ever visit — stay quiet
     el.style.display = '';
-    el.textContent = count > 1 ? `👋 Welcome back! ${count}-day streak 🔥` : '👋 Welcome back!';
+    if (froze > 0) el.textContent = `🛡️ Streak Freeze saved your ${count}-day streak! 🔥`;
+    else el.textContent = count > 1 ? `👋 Welcome back! ${count}-day streak 🔥` : '👋 Welcome back!';
   }
 
   // ---- small DOM helpers --------------------------------------------------
@@ -642,6 +715,7 @@
     $('quitBtn').onclick = quitToMenu;
     $('againBtn').onclick = startGame;
     $('overMenuBtn').onclick = quitToMenu;
+    const ob = $('ovOpenBoxes'); if (ob) ob.onclick = openBoxes;
 
     const ic = $('instrument');
     ic.addEventListener('pointerdown', onTap);

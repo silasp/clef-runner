@@ -618,7 +618,7 @@
 
   const cityTheme = {
     key: 'city', emojis: ['🎉', '🥳', '🎊', '🎵', '✨', '🌍'],
-    label() { const p = scene.place; return p ? `${p.flag} ${p.city}, ${p.country}` : '🌍 World Tour'; },
+    label() { const p = scene.place; if (!p) return '🌍 World Tour'; return `${p.flag} ${p.city}, ${p.country}` + (scene.newStamp ? '  ·  📮 New postcard!' : ''); },
     onShow() {
       scene.place = pick(PLACES);
       scene.palette = pick(SKY);
@@ -626,6 +626,9 @@
       LMA = scene.palette.acc || '#ffe1a0';
       const k = scene.place.kind;
       scene.landmark = (k && LANDMARKS[k]) ? LANDMARKS[k] : null;
+      // collect the postcard into the passport
+      scene.newStamp = false;
+      if (App.Stats && App.Stats.stampCity) { const r = App.Stats.stampCity(scene.place); scene.newStamp = !!(r && r.firstVisit); }
     },
     bg(t) {
       const pal = scene.palette || SKY[0];
@@ -640,6 +643,27 @@
       else FEATURES[scene.seed % FEATURES.length](cx, by, S);
     },
   };
+
+  // Treasure-vault theme — the box-opening screen. The note fountain becomes a
+  // gem/coin fountain (via emojis); shown only when explicitly requested.
+  const treasureTheme = {
+    key: 'treasure', emojis: ['💎', '🪙', '💰', '✨', '🌟', '💵'],
+    label() { return '💰 Treasure Vault'; },
+    bg(t) {
+      vgrad(['#2a1a02', '#6b4a10', '#caa12a']);
+      ctx.save(); ctx.translate(W / 2, H * 0.5); const n = 20;
+      for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2 + t * 0.3; ctx.fillStyle = i % 2 ? 'rgba(255,236,170,0.16)' : 'rgba(255,210,90,0.08)'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, MIN() * 1.1, a, a + Math.PI / n); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+      drawChest(W / 2, H * 0.74, MIN() * 0.55);
+    },
+  };
+  function drawChest(cx, by, S) {
+    const w = S * 0.9, h = S * 0.5;
+    ctx.fillStyle = '#7a4a1e'; ctx.fillRect(cx - w / 2, by - h * 0.55, w, h * 0.55); // base
+    ctx.save(); ctx.translate(cx - w / 2, by - h * 0.55); ctx.rotate(-0.5); ctx.fillStyle = '#8a5a26'; ctx.fillRect(0, -h * 0.5, w, h * 0.5); ctx.restore(); // open lid
+    ctx.save(); ctx.shadowColor = '#ffd24a'; ctx.shadowBlur = S * 0.18; ctx.fillStyle = '#ffe08a'; ctx.fillRect(cx - w * 0.42, by - h * 0.62, w * 0.84, h * 0.14); ctx.restore(); // glowing gold
+    ctx.fillStyle = '#caa12a'; ctx.fillRect(cx - w / 2, by - h * 0.3, w, h * 0.06); ctx.fillRect(cx - w * 0.06, by - h * 0.5, w * 0.12, h * 0.22); // bands + lock
+  }
 
   // ---- particles (the note fountain + cascade) ----------------------------
   function glyphPool() { return NOTE_GLYPHS.concat(theme && theme.emojis ? theme.emojis : []); }
@@ -780,7 +804,7 @@
   function pickTheme() { return Math.random() < 0.6 ? cityTheme : THEMES[(Math.random() * THEMES.length) | 0]; }
 
   function startOne(opts) {
-    const all = THEMES.concat(cityTheme);
+    const all = THEMES.concat(cityTheme, treasureTheme);
     theme = opts.theme ? (all.find((x) => x.key === opts.theme) || pickTheme()) : pickTheme();
     if (theme.onShow) theme.onShow();
     kickerEl.textContent = opts.kicker || pick(KICKERS);

@@ -45,6 +45,8 @@ Rotate to **landscape**. On a phone, use *Add to Home Screen* for a full-screen 
 | 🔊 | Web-Audio note feedback |
 | 📊 | Local stats (localStorage) — player name, recent score, plus score & time totals for today and all-time |
 | 🎉 | **Celebration screens** — colourful note-fountain animations over **250+ world locations** (hand-drawn landmark silhouettes for Paris, London, NYC, Rome, Dubai, Sydney, Cairo, Rio… plus a unique procedural skyline for every other city) and exotic fantasy scenes (space, under the sea, fireworks, aurora…). Paced as **awards**: cumulative-score milestones with widening gaps, shown only on first load or once enough practice accrues (cadence scales toward your median daily practice). A live "points to next award" hint keeps you going. Preview them all at `index.html#celebrate`. |
+| 💎 | **Treasure boxes & gems** — clear the occasional golden 💎 treasure note to bank a box; open boxes for a variable gem payout (rare jackpots!). Spend gems on **Streak Freezes** that protect your day streak when you miss a day |
+| 🛂 | **Passport album** — every celebration stamps that city into your passport; collect postcards from all 266 cities (per-country progress) |
 | 💾 | Remembers your settings (instrument, mode, difficulty, toggles…) between sessions |
 | 👤 | Guest profiles, with **optional Google Sign-In** |
 | 📱 | Installable PWA, offline-capable, landscape-locked |

@@ -130,6 +130,12 @@
         <div class="section-title">Your stats</div>
         <div class="stats-panel" id="statsPanel"></div>
 
+        <div class="section-title">Treasure</div>
+        <div class="treasure-panel" id="treasurePanel"></div>
+
+        <div class="section-title">Passport <span style="color:var(--muted);text-transform:none;letter-spacing:0;">· postcards from your celebrations</span></div>
+        <div class="passport-panel" id="passportPanel"></div>
+
         <footer class="menu-footer">
           <div class="credit">Clef Runner · enjoying it? ☕ support is up top ↗</div>
         </footer>
@@ -151,6 +157,7 @@
         </div>
         <div class="stat" id="hudAccWrap"><span class="k">Accuracy</span><span class="v" id="hudAcc">100%</span></div>
         <div class="stat award" id="hudAwardWrap"><span class="k">Next award</span><span class="v" id="hudAward">—</span></div>
+        <div class="stat treasure" id="hudGemsWrap"><span class="k">Treasure</span><span class="v" id="hudGems">💎 0</span></div>
         <div class="lives" id="hudLives" style="display:none;"></div>
         <button class="icon-btn" id="menuBtn" aria-label="Menu">☰</button>
       </div>
@@ -191,6 +198,7 @@
             <div><div class="k">Best streak</div><div class="v" id="ovStreak">0</div></div>
             <div><div class="k">Accuracy</div><div class="v" id="ovAcc">0%</div></div>
           </div>
+          <button id="ovOpenBoxes" class="ov-boxes" style="display:none;"></button>
           <div class="actions">
             <button class="go" id="againBtn">Play again</button>
             <button id="overMenuBtn">Menu</button>
