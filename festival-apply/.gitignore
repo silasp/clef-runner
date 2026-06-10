@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Local SQLite database (festivals are re-seeded on startup)
+data/*.db
+data/*.db-journal
+
+# Hugging Face model cache, if pointed locally
+.cache/
+models/
+
+.DS_Store
+.env

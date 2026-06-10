@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Festival Apply — one set of assets, every application form</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🎪</span>
+      <div>
+        <h1>Festival Apply</h1>
+        <p class="tagline">One set of assets. Every festival form. Drafted by a local LLM.</p>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="festivals">Festivals</button>
+      <button class="tab" data-tab="assets">My Assets</button>
+      <button class="tab" data-tab="drafts">Saved Drafts</button>
+    </nav>
+    <div id="llm-badge" class="llm-badge" title="Local LLM status">LLM: …</div>
+  </header>
+
+  <!-- ============ FESTIVALS ============ -->
+  <main id="tab-festivals" class="tab-panel active">
+    <section class="filters">
+      <input id="f-search" type="search" placeholder="Search name, location, genre…" />
+      <select id="f-region"><option value="">All regions</option></select>
+      <select id="f-country"><option value="">All countries</option></select>
+      <select id="f-genre"><option value="">All genres</option></select>
+      <select id="f-status"><option value="">Any application status</option></select>
+      <span id="f-count" class="muted"></span>
+    </section>
+    <div id="festival-list" class="cards"></div>
+  </main>
+
+  <!-- ============ ASSETS ============ -->
+  <main id="tab-assets" class="tab-panel">
+    <p class="intro">Fill this in once. Every festival application is generated from these
+      master assets, then reshaped per festival before you submit.</p>
+    <form id="assets-form" class="asset-form"></form>
+    <div class="form-actions">
+      <button id="save-assets" class="primary">Save assets</button>
+      <span id="assets-status" class="muted"></span>
+    </div>
+  </main>
+
+  <!-- ============ DRAFTS ============ -->
+  <main id="tab-drafts" class="tab-panel">
+    <div id="drafts-list" class="cards"></div>
+  </main>
+
+  <!-- ============ APPLICATION MODAL ============ -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-card">
+      <button id="modal-close" class="modal-close">✕</button>
+      <div id="modal-header"></div>
+      <div class="generate-bar">
+        <label class="toggle">
+          <input type="checkbox" id="use-llm" checked /> Use local LLM to rewrite
+        </label>
+        <button id="generate-btn" class="primary">Generate application ▶</button>
+        <span id="generate-status" class="muted"></span>
+      </div>
+      <div id="generated-fields"></div>
+      <div class="form-actions sticky">
+        <button id="copy-all" class="ghost">Copy all</button>
+        <button id="save-draft" class="primary">Save draft</button>
+        <a id="open-form" class="ghost" target="_blank" rel="noopener">Open real form ↗</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
