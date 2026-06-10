@@ -93,6 +93,16 @@
     ctx.ellipse(x + noteRx + gap * 0.55, y - gap * 0.3, gap * 0.16, gap * 0.16, 0, 0, 7);
     ctx.fill();
   }
+  // Gold halo + gem marker behind a treasure note (clear it to bank a box).
+  function drawTreasureMark(ctx, x, y, gap) {
+    ctx.save();
+    ctx.shadowColor = '#ffd24a'; ctx.shadowBlur = gap * 0.9;
+    ctx.fillStyle = 'rgba(255,210,74,0.30)';
+    ctx.beginPath(); ctx.arc(x, y, gap * 0.95, 0, 7); ctx.fill();
+    ctx.restore();
+    ctx.font = `${gap * 1.05}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('💎', x, y - gap * 1.0);
+  }
   function stemX(x, up, noteRx) { return up ? x + noteRx - 0.5 : x - noteRx + 0.5; }
   function drawStem(ctx, x, y, color, up, tipY, noteRx) {
     const sx = stemX(x, up, noteRx);
@@ -211,6 +221,7 @@
       this._rhythmBuf = [];          // streamed rhythm pattern
       this.key = T.keySig(0);        // current key signature (C major)
       this._clickUnit = null;        // last fired metronome beat index
+      this._sinceTreasure = 0;       // notes since the last treasure note (spacing)
       this._octToggle = false;       // octave-displacement clef alternation (grand)
       this._behind = false;          // notes piling up faster than they're cleared
     }
@@ -444,6 +455,7 @@
       this.notes.push({
         note: item.note, beat: this.songBeat, dur, x: 1e9,
         fifths: item.fifths != null ? item.fifths : (this.key ? this.key.fifths : 0),
+        treasure: this._rollTreasure(),
       });
       this.songBeat += dur;
       return true;
@@ -568,12 +580,21 @@
         this._tempoUpOnHit();          // every 10th correct note nudges the BPM up
         this.peakScore = Math.max(this.peakScore, this.score);
         const cleared = this.notes.shift();
-        return { result: 'good', note: cleared.note, multiplier: mult };
+        return { result: 'good', note: cleared.note, multiplier: mult, treasure: !!cleared.treasure };
       }
       this.score = Math.max(0, this.score - 1);
       this.streak = 0;
       this._tempoDownOnWrong();        // every 10th wrong note nudges the BPM down
       return { result: 'bad', expected: a.note };
+    }
+
+    // Occasionally flag a spawned note as a treasure note (clear it for a box),
+    // spaced out so they stay a treat rather than a constant.
+    _rollTreasure() {
+      this._sinceTreasure = (this._sinceTreasure || 0) + 1;
+      if (this._sinceTreasure < 22) return false;       // minimum spacing
+      if (Math.random() < 0.05) { this._sinceTreasure = 0; return true; }
+      return false;
     }
 
     // Microphone play-along: octave-tolerant pitch-class match, lenient (a wrong
@@ -591,7 +612,7 @@
         this._tempoUpOnHit();          // every 10th correct note nudges the BPM up
         this.peakScore = Math.max(this.peakScore, this.score);
         const cleared = this.notes.shift();
-        return { result: 'good', note: cleared.note, multiplier: mult };
+        return { result: 'good', note: cleared.note, multiplier: mult, treasure: !!cleared.treasure };
       }
       return null;
     }
@@ -669,6 +690,7 @@
 
         // notehead + augmentation dot (stems/flags/beams drawn together below)
         const rg = rhythmGlyph(n.dur);
+        if (n.treasure) drawTreasureMark(ctx, n.x, y, gap);
         drawNoteHead(ctx, n.x, y, color, rg.hollow, noteRx, noteRy);
         if (rg.dotted) drawDot(ctx, n.x, y, gap, color, noteRx);
 
@@ -745,6 +767,7 @@
           ctx.fillText(glyph, n.x - noteRx - 3, y);
         }
         const rg = rhythmGlyph(n.dur);
+        if (n.treasure) drawTreasureMark(ctx, n.x, y, gap);
         drawNoteHead(ctx, n.x, y, color, rg.hollow, noteRx, noteRy);
         if (rg.dotted) drawDot(ctx, n.x, y, gap, color, noteRx);
 

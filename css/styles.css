@@ -313,3 +313,34 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
 
 /* HUD "points to next award" hint */
 .hud .stat.award .v { color: var(--accent); }
+
+/* ---- treasure: HUD chip, panel, shop ---- */
+.hud .stat.treasure .v { color: var(--accent); }
+.treasure-panel { background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius); padding: 12px 14px; }
+.treasure-bal { display: flex; flex-wrap: wrap; gap: 14px; font-weight: 800; font-size: 18px; margin-bottom: 10px; }
+.treasure-bal .t-gem { color: var(--accent); }
+.treasure-bal .t-box, .treasure-bal .t-frz { color: var(--text); }
+.btn-treasure {
+  display: block; width: 100%; padding: 13px; border: 0; border-radius: 12px; font-weight: 800; font-size: 16px; color: #1a1300;
+  background: linear-gradient(140deg, var(--accent), #ff9d3c); box-shadow: 0 4px 16px rgba(255,176,46,.35);
+}
+.btn-treasure:disabled { background: var(--panel-2); color: var(--muted); box-shadow: none; cursor: default; }
+.shop-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.shop-row .link-btn:disabled { opacity: .5; cursor: default; }
+.shop-row .desc { color: var(--muted); font-size: 12px; flex: 1; min-width: 160px; }
+
+/* ---- passport album ---- */
+.passport-panel { background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius); padding: 12px 14px; }
+.pp-head { font-size: 14px; color: var(--text); }
+.pp-head b { font-size: 18px; color: var(--accent); }
+.pp-bar { height: 8px; background: var(--bg-2); border-radius: 999px; overflow: hidden; margin-top: 8px; }
+.pp-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #ff9d3c); }
+.pp-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.pp-card { display: inline-flex; align-items: center; gap: 5px; background: var(--panel-2); border: 1px solid var(--edge); border-radius: 999px; padding: 5px 10px; font-size: 13px; }
+.pp-card .pp-n { color: var(--accent); font-size: 11px; }
+
+/* game-over: open boxes button */
+.ov-boxes {
+  display: block; width: 100%; margin: 4px 0 12px; padding: 12px; border: 0; border-radius: 12px; font-weight: 800; font-size: 16px; color: #1a1300;
+  background: linear-gradient(140deg, var(--accent), #ff9d3c); box-shadow: 0 4px 16px rgba(255,176,46,.4);
+}
