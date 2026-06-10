@@ -330,10 +330,12 @@
   // Live cumulative all-time score (recorded total + the in-progress game).
   function liveScore() { return App.Stats.get().allTime.score + (game ? game.score : 0); }
 
-  // During practice: if the award window is open AND the cumulative-score
-  // milestone is reached, pause, celebrate, and resume when dismissed.
+  // During practice: reaching an award milestone celebrates immediately, right
+  // in the game — pause, show the screen, resume when dismissed. Pacing comes
+  // from the widening score tiers themselves (each award needs progressively
+  // more points), so no extra time-window gate here.
   function checkAwardDuringPlay() {
-    const award = App.Stats.tryAward(liveScore(), game.elapsedMs, false);
+    const award = App.Stats.tryAward(liveScore(), game.elapsedMs, true);
     if (!award) return;
     if (game.status === 'playing') game.pause();
     celebrate(Object.assign(awardOpts(award), {
