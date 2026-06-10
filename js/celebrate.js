@@ -64,13 +64,8 @@
   // ---- themes -------------------------------------------------------------
   const MIN = () => Math.min(W, H);
 
-  const CITIES = [
-    { name: 'Paris', flag: '🗼', landmark: eiffel },
-    { name: 'London', flag: '🎡', landmark: bigBen },
-    { name: 'New York', flag: '🗽', landmark: liberty },
-    { name: 'Tokyo', flag: '🗾', landmark: tokyoTower },
-    { name: 'Sydney', flag: '🌉', landmark: operaHouse },
-  ];
+  // The world-cities theme (hundreds of locations) is defined lower down as
+  // `cityTheme`, built from the PLACES catalog + the LANDMARKS silhouette library.
 
   const THEMES = [
     {
@@ -189,21 +184,6 @@
       },
     },
     {
-      key: 'city', label: () => (scene.city ? scene.city.flag + ' ' + scene.city.name : '🌆 City Lights'),
-      emojis: ['🌆', '🎉', '🥳', '🎵', '✨', '🎊'],
-      onShow() { scene.city = pick(CITIES); },
-      bg(t) {
-        vgrad(['#142244', '#3a3f7a', '#ff9e7a']);
-        disc(W * 0.78, H * 0.32, MIN() * 0.09, '#fff3d0', '#ff8e5a');
-        stars(t * 0.4);
-        // back skyline
-        drawSkyline(H * 0.72, '#26315c', 0.04, t);
-        // front skyline
-        drawSkyline(H * 0.8, '#161d3a', 0.06, t + 10);
-        if (scene.city) scene.city.landmark(t);
-      },
-    },
-    {
       key: 'fanfare', label: () => '🎺 Grand Fanfare',
       emojis: ['🎺', '🎷', '🏆', '🥇', '👑', '✨'],
       bg(t) {
@@ -275,74 +255,391 @@
     },
   ];
 
-  // ---- landmark silhouettes (drawn near the horizon for the city theme) ----
-  function eiffel() {
-    const cx = W * 0.5, baseY = H * 0.8, h = MIN() * 0.5;
-    ctx.fillStyle = '#0d1430'; ctx.strokeStyle = '#0d1430'; ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(cx - h * 0.22, baseY); ctx.lineTo(cx - h * 0.05, baseY - h);
-    ctx.lineTo(cx + h * 0.05, baseY - h); ctx.lineTo(cx + h * 0.22, baseY);
-    ctx.moveTo(cx - h * 0.14, baseY - h * 0.4); ctx.lineTo(cx + h * 0.14, baseY - h * 0.4);
-    ctx.moveTo(cx - h * 0.09, baseY - h * 0.65); ctx.lineTo(cx + h * 0.09, baseY - h * 0.65);
-    ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx - h * 0.22, baseY); ctx.quadraticCurveTo(cx, baseY - h * 0.18, cx + h * 0.22, baseY); ctx.stroke();
-  }
-  function bigBen() {
-    const cx = W * 0.5, baseY = H * 0.8, h = MIN() * 0.46, w = h * 0.16;
-    ctx.fillStyle = '#0d1430';
-    ctx.fillRect(cx - w / 2, baseY - h, w, h);
-    ctx.fillStyle = '#ffd24a'; ctx.beginPath(); ctx.arc(cx, baseY - h + w * 0.7, w * 0.32, 0, 7); ctx.fill();
-    ctx.fillStyle = '#0d1430'; tri(cx, baseY - h, w * 1.1, w * 0.9, '#0d1430');
-  }
-  function liberty() {
-    const cx = W * 0.5, baseY = H * 0.8, h = MIN() * 0.42;
-    ctx.fillStyle = '#13352f';
-    ctx.fillRect(cx - h * 0.06, baseY - h * 0.7, h * 0.12, h * 0.7); // body
-    ctx.beginPath(); ctx.arc(cx, baseY - h * 0.74, h * 0.07, 0, 7); ctx.fill(); // head
-    ctx.fillRect(cx + h * 0.02, baseY - h, h * 0.04, h * 0.3); // arm
-    tri(cx + h * 0.04, baseY - h, h * 0.1, h * 0.12, '#ffcf5a'); // torch
-    ctx.fillStyle = '#13352f'; ctx.fillRect(cx - h * 0.18, baseY - h * 0.06, h * 0.36, h * 0.06); // base
-  }
-  function tokyoTower() {
-    const cx = W * 0.5, baseY = H * 0.8, h = MIN() * 0.5;
-    ctx.strokeStyle = '#c0392b'; ctx.fillStyle = '#c0392b'; ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(cx - h * 0.2, baseY); ctx.lineTo(cx, baseY - h);
-    ctx.lineTo(cx + h * 0.2, baseY);
-    ctx.moveTo(cx - h * 0.1, baseY - h * 0.5); ctx.lineTo(cx + h * 0.1, baseY - h * 0.5);
-    ctx.stroke();
-    ctx.fillRect(cx - 3, baseY - h - h * 0.1, 6, h * 0.1);
-  }
-  function operaHouse() {
-    const cx = W * 0.5, baseY = H * 0.8, w = MIN() * 0.5;
-    ctx.fillStyle = '#eef3ff';
-    for (let i = 0; i < 4; i++) {
-      ctx.save(); ctx.translate(cx - w * 0.3 + i * w * 0.2, baseY); ctx.scale(1, 1.4);
-      ctx.beginPath(); ctx.arc(0, 0, w * 0.16 - i * w * 0.012, Math.PI, 0); ctx.fill(); ctx.restore();
-    }
-    ctx.fillStyle = '#13243f'; ctx.fillRect(cx - w * 0.42, baseY, w * 0.84, H * 0.2);
-  }
+  // =========================================================================
+  // WORLD CITIES THEME — hundreds of locations.
+  // A hand-authored library of distinct landmark silhouettes (LANDMARKS) for the
+  // iconic places, plus a deterministic procedural skyline seeded by city name so
+  // every long-tail city renders a unique silhouette. Sky palette is randomised
+  // per show. All vector — offline, no assets, no licensing.
+  // =========================================================================
 
-  function drawSkyline(topY, color, density, t) {
-    ctx.fillStyle = color;
+  // deterministic per-city RNG so each city's skyline is unique but stable
+  function hashStr(s) { s = String(s); let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  function mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+  // sky palettes (day / sunset / dusk / night / golden / teal / purple night)
+  const SKY = [
+    { stops: ['#7ec8ff', '#bfe9ff', '#eef7ff'], night: false, sun: '#fff6d0', sun2: '#ffd35a', acc: '#ffd98a' },
+    { stops: ['#2a2350', '#7a3f6a', '#ff9e5e'], night: false, sun: '#fff0c0', sun2: '#ff7e4a', acc: '#ffd9a0' },
+    { stops: ['#142244', '#3a4a7a', '#ffb08a'], night: false, sun: '#ffe9c0', sun2: '#ff9e7a', acc: '#ffe1a0' },
+    { stops: ['#05030f', '#0a0a24', '#141436'], night: true, acc: '#ffe1a0' },
+    { stops: ['#3a2a00', '#b9772a', '#ffd27a'], night: false, sun: '#fff6d0', sun2: '#ffbe5a', acc: '#fff0c0' },
+    { stops: ['#04303a', '#0a6b6b', '#28c0a8'], night: false, sun: '#eafff6', sun2: '#7fe6c8', acc: '#d6fff0' },
+    { stops: ['#1a0830', '#3a1060', '#b14a9a'], night: true, acc: '#ffd0f0' },
+  ];
+
+  // landmark silhouette colour + warm accent (set per show from the palette)
+  let LMC = 'rgba(9,11,20,0.88)';
+  let LMA = '#ffe1a0';
+  function box(x, y, w, h) { ctx.fillStyle = LMC; ctx.fillRect(x, y, w, h); }
+  function peak(cx, by, w, h) { tri(cx, by, w, h, LMC); }
+  function semi(cx, by, r, sx) { ctx.save(); ctx.translate(cx, by); ctx.scale(1, sx || 1); ctx.fillStyle = LMC; ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.restore(); }
+  function onion(cx, by, w, h) { ctx.fillStyle = LMC; ctx.beginPath(); ctx.moveTo(cx - w / 2, by); ctx.quadraticCurveTo(cx - w * 0.62, by - h * 0.55, cx, by - h); ctx.quadraticCurveTo(cx + w * 0.62, by - h * 0.55, cx + w / 2, by); ctx.closePath(); ctx.fill(); box(cx - 1.5, by - h - h * 0.22, 3, h * 0.22); }
+  function lights(x, y, w, h) { ctx.fillStyle = LMA; for (let yy = y + 6; yy < y + h - 3; yy += 11) for (let xx = x + 5; xx < x + w - 4; xx += 8) if ((((xx * 3 + yy * 7) % 5)) < 2) ctx.fillRect(xx, yy, 3, 4); }
+  function moon() { disc(W * 0.8, H * 0.26, MIN() * 0.07, '#fdf6d8', '#cfd6e8'); }
+  function sun(pal) { disc(W * 0.8, H * 0.28, MIN() * 0.085, pal.sun || '#fff3d0', pal.sun2 || '#ff9e5a'); }
+
+  // ---- landmark silhouettes (cx = centre, by = ground line, S = size unit) ----
+  const LANDMARKS = {
+    eiffel(cx, by, S) {
+      const h = S * 1.05; ctx.strokeStyle = LMC; ctx.fillStyle = LMC; ctx.lineWidth = Math.max(2, S * 0.014);
+      ctx.beginPath();
+      ctx.moveTo(cx - h * 0.22, by); ctx.lineTo(cx - h * 0.05, by - h); ctx.lineTo(cx + h * 0.05, by - h); ctx.lineTo(cx + h * 0.22, by);
+      ctx.moveTo(cx - h * 0.15, by - h * 0.38); ctx.lineTo(cx + h * 0.15, by - h * 0.38);
+      ctx.moveTo(cx - h * 0.09, by - h * 0.66); ctx.lineTo(cx + h * 0.09, by - h * 0.66);
+      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - h * 0.22, by); ctx.quadraticCurveTo(cx, by - h * 0.16, cx + h * 0.22, by); ctx.stroke();
+      box(cx - 1.5, by - h - h * 0.05, 3, h * 0.05);
+    },
+    bigben(cx, by, S) {
+      const h = S * 0.95, w = h * 0.16; box(cx - w / 2, by - h, w, h); lights(cx - w / 2, by - h * 0.45, w, h * 0.45);
+      ctx.fillStyle = LMA; ctx.beginPath(); ctx.arc(cx, by - h + w * 0.75, w * 0.3, 0, 7); ctx.fill();
+      peak(cx, by - h, w * 1.15, w * 0.95);
+    },
+    towerbridge(cx, by, S) {
+      const w = S * 1.3, th = S * 0.7, tw = S * 0.16; const lx = cx - w * 0.3, rx = cx + w * 0.3;
+      box(cx - w / 2, by - S * 0.12, w, S * 0.06); // deck
+      [lx, rx].forEach((x) => { box(x - tw / 2, by - th, tw, th); peak(x, by - th, tw * 1.2, tw * 0.7); });
+      ctx.strokeStyle = LMC; ctx.lineWidth = Math.max(2, S * 0.02);
+      ctx.beginPath(); ctx.moveTo(lx, by - th * 0.55); ctx.lineTo(rx, by - th * 0.55); ctx.stroke(); // high walkway
+      ctx.beginPath(); ctx.moveTo(cx - w / 2, by - S * 0.12); ctx.quadraticCurveTo(lx, by + S * 0.05, lx, by - th * 0.4); ctx.moveTo(rx, by - th * 0.4); ctx.quadraticCurveTo(rx, by + S * 0.05, cx + w / 2, by - S * 0.12); ctx.stroke();
+    },
+    liberty(cx, by, S) {
+      const h = S * 0.92; box(cx - S * 0.13, by - h * 0.14, S * 0.26, h * 0.14); // pedestal
+      box(cx - S * 0.06, by - h * 0.75, S * 0.12, h * 0.61); // robe
+      ctx.fillStyle = LMC; ctx.beginPath(); ctx.arc(cx, by - h * 0.8, S * 0.06, 0, 7); ctx.fill(); // head
+      for (let i = 0; i < 7; i++) { const a = -Math.PI / 2 + (i - 3) * 0.26; box(cx + Math.cos(a) * S * 0.08 - 1, by - h * 0.8 + Math.sin(a) * S * 0.08 - 1, 2.5, S * 0.05); } // crown
+      box(cx + S * 0.03, by - h, S * 0.035, h * 0.28); // raised arm
+      ctx.fillStyle = LMA; ctx.beginPath(); ctx.arc(cx + S * 0.045, by - h - S * 0.01, S * 0.035, 0, 7); ctx.fill(); // torch
+    },
+    tokyotower(cx, by, S) {
+      const h = S * 1.05; ctx.strokeStyle = LMC; ctx.fillStyle = LMC; ctx.lineWidth = Math.max(2, S * 0.016);
+      ctx.beginPath(); ctx.moveTo(cx - h * 0.2, by); ctx.lineTo(cx, by - h); ctx.lineTo(cx + h * 0.2, by);
+      ctx.moveTo(cx - h * 0.11, by - h * 0.45); ctx.lineTo(cx + h * 0.11, by - h * 0.45); ctx.stroke();
+      box(cx - h * 0.13, by - h * 0.62, h * 0.26, h * 0.08); // observation deck
+      box(cx - 2, by - h - h * 0.12, 4, h * 0.12);
+    },
+    skytree(cx, by, S) {
+      const h = S * 1.15; box(cx - S * 0.03, by - h, S * 0.06, h);
+      ctx.fillStyle = LMC; ctx.beginPath(); ctx.arc(cx, by - h * 0.62, S * 0.09, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, by - h * 0.82, S * 0.06, 0, 7); ctx.fill();
+    },
+    operahouse(cx, by, S) {
+      const w = S * 1.1; box(cx - w * 0.46, by - S * 0.06, w * 0.92, S * 0.06);
+      for (let i = 0; i < 4; i++) { ctx.save(); ctx.translate(cx - w * 0.28 + i * w * 0.19, by - S * 0.04); ctx.scale(1, 1.5); ctx.fillStyle = LMC; ctx.beginPath(); ctx.arc(0, 0, w * 0.15 - i * w * 0.012, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.restore(); }
+    },
+    harbourbridge(cx, by, S) {
+      const w = S * 1.4; box(cx - w / 2, by - S * 0.1, w, S * 0.05);
+      ctx.strokeStyle = LMC; ctx.lineWidth = Math.max(3, S * 0.03);
+      ctx.beginPath(); ctx.moveTo(cx - w / 2, by - S * 0.1); ctx.quadraticCurveTo(cx, by - S * 0.62, cx + w / 2, by - S * 0.1); ctx.stroke();
+      ctx.lineWidth = Math.max(1, S * 0.01);
+      for (let i = 1; i < 10; i++) { const x = cx - w / 2 + (w * i) / 10; const yT = by - S * 0.1 - (S * 0.52) * Math.sin((i / 10) * Math.PI); ctx.beginPath(); ctx.moveTo(x, by - S * 0.1); ctx.lineTo(x, yT); ctx.stroke(); }
+    },
+    christredeemer(cx, by, S) {
+      peak(cx, by, S * 1.0, S * 0.5); // hill
+      const top = by - S * 0.5, h = S * 0.5; box(cx - S * 0.03, top - h, S * 0.06, h * 0.9); // body
+      box(cx - S * 0.26, top - h * 0.78, S * 0.52, S * 0.04); // outstretched arms
+      ctx.fillStyle = LMC; ctx.beginPath(); ctx.arc(cx, top - h, S * 0.045, 0, 7); ctx.fill();
+    },
+    colosseum(cx, by, S) {
+      const w = S * 1.1, h = S * 0.5; ctx.fillStyle = LMC;
+      ctx.beginPath(); ctx.ellipse(cx, by - h, w / 2, h, 0, Math.PI, 0); ctx.lineTo(cx + w / 2, by); ctx.ellipse(cx, by, w / 2, h * 0.4, 0, 0, Math.PI); ctx.closePath(); ctx.fill();
+      // arch openings (cut with accent so it reads as arches)
+      ctx.fillStyle = LMA; for (let r = 0; r < 2; r++) for (let i = 0; i < 9; i++) { const x = cx - w * 0.42 + i * w * 0.105; ctx.fillRect(x, by - h * 0.7 + r * h * 0.5, w * 0.045, h * 0.32); }
+    },
+    leaningtower(cx, by, S) {
+      ctx.save(); ctx.translate(cx, by); ctx.rotate(0.12); const h = S * 0.8, w = S * 0.16;
+      for (let i = 0; i < 6; i++) { box(-w / 2, -h + i * (h / 6), w, h / 6 - 2); }
+      ctx.restore();
+    },
+    tajmahal(cx, by, S) {
+      box(cx - S * 0.5, by - S * 0.12, S * 1.0, S * 0.12); // plinth
+      [-0.42, 0.42].forEach((d) => box(cx + d * S - S * 0.02, by - S * 0.62, S * 0.04, S * 0.5)); // outer minarets
+      [-0.24, 0.24].forEach((d) => box(cx + d * S - S * 0.018, by - S * 0.55, S * 0.036, S * 0.43));
+      box(cx - S * 0.22, by - S * 0.38, S * 0.44, S * 0.26); // main building
+      onion(cx, by - S * 0.38, S * 0.34, S * 0.42); // central dome
+      [-0.16, 0.16].forEach((d) => onion(cx + d * S, by - S * 0.36, S * 0.12, S * 0.14));
+    },
+    burjkhalifa(cx, by, S) {
+      const h = S * 1.3; for (let i = 0; i < 5; i++) { const w = S * (0.22 - i * 0.035); box(cx - w / 2, by - h * (0.2 + i * 0.16), w, h * 0.18); }
+      box(cx - 2, by - h, 4, h * 0.2); lights(cx - S * 0.11, by - h * 0.6, S * 0.22, h * 0.5);
+    },
+    spaceneedle(cx, by, S) {
+      const h = S * 1.0; ctx.strokeStyle = LMC; ctx.lineWidth = Math.max(3, S * 0.025);
+      ctx.beginPath(); ctx.moveTo(cx - S * 0.06, by); ctx.lineTo(cx - S * 0.02, by - h * 0.7); ctx.moveTo(cx + S * 0.06, by); ctx.lineTo(cx + S * 0.02, by - h * 0.7); ctx.stroke();
+      ctx.fillStyle = LMC; ctx.beginPath(); ctx.ellipse(cx, by - h * 0.72, S * 0.18, S * 0.06, 0, 0, 7); ctx.fill();
+      box(cx - 1.5, by - h, 3, h * 0.28);
+    },
+    goldengate(cx, by, S) {
+      const w = S * 1.4, th = S * 0.75; const lx = cx - w * 0.28, rx = cx + w * 0.28;
+      box(cx - w / 2, by - S * 0.14, w, S * 0.04);
+      [lx, rx].forEach((x) => { box(x - S * 0.02, by - th, S * 0.04, th); box(x - S * 0.05, by - th * 0.7, S * 0.1, S * 0.03); });
+      ctx.strokeStyle = LMC; ctx.lineWidth = Math.max(2, S * 0.018);
+      ctx.beginPath(); ctx.moveTo(cx - w / 2, by - S * 0.18); ctx.quadraticCurveTo(lx, by - th * 0.45, lx, by - th); ctx.moveTo(lx, by - th); ctx.quadraticCurveTo(cx, by - th * 0.4, rx, by - th); ctx.moveTo(rx, by - th); ctx.quadraticCurveTo(cx + w / 2, by - th * 0.45, cx + w / 2, by - S * 0.18); ctx.stroke();
+    },
+    brandenburg(cx, by, S) {
+      const w = S * 0.9, h = S * 0.5; box(cx - w / 2, by - h, w, h * 0.18); // entablature
+      for (let i = 0; i < 6; i++) box(cx - w / 2 + i * (w / 5.5) + w * 0.02, by - h * 0.82, w * 0.06, h * 0.82); // columns
+      box(cx - S * 0.05, by - h - S * 0.16, S * 0.1, S * 0.05); // quadriga base
+      box(cx - S * 0.06, by - h - S * 0.13, S * 0.12, S * 0.02);
+    },
+    stbasils(cx, by, S) {
+      box(cx - S * 0.3, by - S * 0.3, S * 0.6, S * 0.3);
+      onion(cx, by - S * 0.5, S * 0.22, S * 0.34);
+      [-0.34, -0.18, 0.18, 0.34].forEach((d, i) => onion(cx + d * S, by - S * 0.3 - (i % 2 ? S * 0.04 : 0), S * 0.14, S * 0.22 + (i % 2 ? S * 0.04 : 0)));
+    },
+    sagrada(cx, by, S) {
+      box(cx - S * 0.32, by - S * 0.3, S * 0.64, S * 0.3);
+      [-0.26, -0.1, 0.1, 0.26].forEach((d, i) => { const h = S * (0.62 + (i === 1 || i === 2 ? 0.18 : 0)); const x = cx + d * S; ctx.fillStyle = LMC; ctx.beginPath(); ctx.moveTo(x - S * 0.05, by - S * 0.3); ctx.quadraticCurveTo(x, by - h, x + S * 0.05, by - S * 0.3); ctx.fill(); });
+    },
+    petronas(cx, by, S) {
+      const h = S * 1.15; [-0.2, 0.2].forEach((d) => { const x = cx + d * S; for (let i = 0; i < 5; i++) { const w = S * (0.16 - i * 0.022); box(x - w / 2, by - h * (0.18 + i * 0.16), w, h * 0.17); } box(x - 1.5, by - h, 3, h * 0.16); lights(x - S * 0.07, by - h * 0.55, S * 0.14, h * 0.45); });
+      ctx.strokeStyle = LMC; ctx.lineWidth = Math.max(2, S * 0.02); ctx.beginPath(); ctx.moveTo(cx - S * 0.2, by - h * 0.5); ctx.lineTo(cx + S * 0.2, by - h * 0.5); ctx.stroke(); // skybridge
+    },
+    cntower(cx, by, S) {
+      const h = S * 1.25; box(cx - S * 0.03, by - h * 0.78, S * 0.06, h * 0.78);
+      ctx.fillStyle = LMC; ctx.beginPath(); ctx.ellipse(cx, by - h * 0.72, S * 0.12, S * 0.05, 0, 0, 7); ctx.fill();
+      box(cx - 1.5, by - h, 3, h * 0.22);
+    },
+    gatewayarch(cx, by, S) {
+      ctx.strokeStyle = LMC; ctx.lineWidth = Math.max(4, S * 0.05); ctx.beginPath();
+      ctx.moveTo(cx - S * 0.4, by); ctx.quadraticCurveTo(cx, by - S * 0.95, cx + S * 0.4, by); ctx.stroke();
+    },
+    sphinxpyramid(cx, by, S) {
+      peak(cx + S * 0.18, by, S * 0.95, S * 0.62); peak(cx - S * 0.4, by, S * 0.6, S * 0.4);
+      box(cx - S * 0.05, by - S * 0.14, S * 0.34, S * 0.14); // sphinx body
+      ctx.fillStyle = LMC; ctx.beginPath(); ctx.arc(cx - S * 0.07, by - S * 0.18, S * 0.06, 0, 7); ctx.fill(); // sphinx head
+    },
+    parthenon(cx, by, S) {
+      const w = S * 0.9, h = S * 0.5; box(cx - w / 2, by - h * 0.3, w, h * 0.1);
+      for (let i = 0; i < 8; i++) box(cx - w / 2 + i * (w / 7.5) + w * 0.02, by - h * 0.85, w * 0.05, h * 0.55);
+      box(cx - w / 2, by - h, w, h * 0.16); peak(cx, by - h, w, h * 0.28); // pediment
+    },
+    atomium(cx, by, S) {
+      const r = S * 0.1, pts = [[0, -0.55], [-0.32, -0.28], [0.32, -0.28], [-0.32, 0.0], [0.32, 0.0], [0, -0.28], [0, 0.05]];
+      ctx.strokeStyle = LMC; ctx.lineWidth = Math.max(2, S * 0.02);
+      ctx.beginPath(); ctx.moveTo(cx, by - S * 0.05); ctx.lineTo(cx, by - S * 0.55); ctx.stroke();
+      pts.forEach((p) => { ctx.fillStyle = LMC; ctx.beginPath(); ctx.arc(cx + p[0] * S, by + p[1] * S - S * 0.05, r, 0, 7); ctx.fill(); });
+    },
+    greatwall(cx, by, S) {
+      ctx.fillStyle = LMC; ctx.beginPath(); ctx.moveTo(0, by);
+      for (let x = 0; x <= W; x += W / 10) ctx.lineTo(x, by - S * 0.18 - S * 0.16 * Math.abs(Math.sin(x * 0.01)));
+      ctx.lineTo(W, by); ctx.closePath(); ctx.fill();
+      for (let i = 1; i < 6; i++) { const x = (W * i) / 6; box(x - S * 0.04, by - S * 0.36, S * 0.08, S * 0.2); }
+    },
+    capitoldome(cx, by, S) {
+      box(cx - S * 0.4, by - S * 0.22, S * 0.8, S * 0.22);
+      for (let i = 0; i < 9; i++) box(cx - S * 0.36 + i * S * 0.09, by - S * 0.34, S * 0.03, S * 0.12);
+      semi(cx, by - S * 0.34, S * 0.18, 1.4); box(cx - 2, by - S * 0.62, 4, S * 0.08);
+    },
+    obelisk(cx, by, S) {
+      const h = S * 0.95; ctx.fillStyle = LMC; ctx.beginPath();
+      ctx.moveTo(cx - S * 0.04, by); ctx.lineTo(cx - S * 0.028, by - h * 0.88); ctx.lineTo(cx, by - h); ctx.lineTo(cx + S * 0.028, by - h * 0.88); ctx.lineTo(cx + S * 0.04, by); ctx.closePath(); ctx.fill();
+    },
+    taipei101(cx, by, S) {
+      const h = S * 1.2; box(cx - S * 0.06, by - h * 0.28, S * 0.12, h * 0.28);
+      for (let i = 0; i < 8; i++) { const w = S * 0.16; ctx.fillStyle = LMC; ctx.beginPath(); ctx.moveTo(cx - w / 2, by - h * (0.28 + i * 0.09)); ctx.lineTo(cx + w / 2, by - h * (0.28 + i * 0.09)); ctx.lineTo(cx + w * 0.4, by - h * (0.28 + i * 0.09 + 0.085)); ctx.lineTo(cx - w * 0.4, by - h * (0.28 + i * 0.09 + 0.085)); ctx.closePath(); ctx.fill(); }
+      box(cx - 1.5, by - h, 3, h * 0.06);
+    },
+    orientalpearl(cx, by, S) {
+      const h = S * 1.15; ctx.strokeStyle = LMC; ctx.lineWidth = Math.max(3, S * 0.03);
+      ctx.beginPath(); ctx.moveTo(cx, by); ctx.lineTo(cx, by - h); ctx.stroke();
+      ctx.fillStyle = LMC; [[0.42, 0.13], [0.66, 0.09], [0.9, 0.05]].forEach(([yy, rr]) => { ctx.beginPath(); ctx.arc(cx, by - h * yy, S * rr, 0, 7); ctx.fill(); });
+    },
+    neuschwanstein(cx, by, S) {
+      peak(cx, by, S * 1.5, S * 0.35); const base = by - S * 0.3;
+      box(cx - S * 0.28, base - S * 0.3, S * 0.56, S * 0.3);
+      [-0.24, 0.0, 0.26].forEach((d, i) => { const x = cx + d * S, th = S * (0.5 + (i === 2 ? 0.18 : 0)); box(x - S * 0.06, base - th, S * 0.12, th); peak(x, base - th, S * 0.14, S * 0.16); });
+    },
+    windmill(cx, by, S) {
+      ctx.fillStyle = LMC; ctx.beginPath(); ctx.moveTo(cx - S * 0.16, by); ctx.lineTo(cx - S * 0.1, by - S * 0.5); ctx.lineTo(cx + S * 0.1, by - S * 0.5); ctx.lineTo(cx + S * 0.16, by); ctx.closePath(); ctx.fill();
+      peak(cx, by - S * 0.5, S * 0.28, S * 0.14);
+      ctx.save(); ctx.translate(cx, by - S * 0.5); ctx.strokeStyle = LMC; ctx.lineWidth = Math.max(3, S * 0.03);
+      for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + 0.5; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * S * 0.3, Math.sin(a) * S * 0.3); ctx.stroke(); } ctx.restore();
+    },
+    bluemosque(cx, by, S) {
+      box(cx - S * 0.34, by - S * 0.32, S * 0.68, S * 0.32);
+      onion(cx, by - S * 0.32, S * 0.4, S * 0.34); semi(cx, by - S * 0.32, S * 0.2, 0.9);
+      [-0.4, -0.2, 0.2, 0.4].forEach((d) => { const x = cx + d * S; box(x - S * 0.022, by - S * 0.7, S * 0.044, S * 0.7); ctx.fillStyle = LMC; ctx.beginPath(); ctx.moveTo(x - S * 0.03, by - S * 0.7); ctx.lineTo(x, by - S * 0.8); ctx.lineTo(x + S * 0.03, by - S * 0.7); ctx.fill(); });
+    },
+    tablemountain(cx, by, S) {
+      ctx.fillStyle = LMC; ctx.beginPath(); ctx.moveTo(cx - S * 0.7, by); ctx.lineTo(cx - S * 0.55, by - S * 0.46); ctx.lineTo(cx + S * 0.55, by - S * 0.5); ctx.lineTo(cx + S * 0.7, by); ctx.closePath(); ctx.fill();
+    },
+    matterhorn(cx, by, S) {
+      ctx.fillStyle = LMC; ctx.beginPath(); ctx.moveTo(cx - S * 0.55, by); ctx.lineTo(cx - S * 0.05, by - S * 0.85); ctx.lineTo(cx + S * 0.12, by - S * 0.72); ctx.lineTo(cx + S * 0.55, by); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#eef3ff'; ctx.beginPath(); ctx.moveTo(cx - S * 0.05, by - S * 0.85); ctx.lineTo(cx - S * 0.14, by - S * 0.6); ctx.lineTo(cx + S * 0.05, by - S * 0.64); ctx.lineTo(cx + S * 0.12, by - S * 0.72); ctx.closePath(); ctx.fill();
+    },
+    hollywood(cx, by, S) {
+      peak(cx, by, S * 1.7, S * 0.4); ctx.fillStyle = '#f2f2f2'; ctx.font = `800 ${S * 0.16}px ui-sans-serif,system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText('HOLLYWOOD', cx, by - S * 0.28);
+    },
+    steppyramid(cx, by, S) {
+      for (let i = 0; i < 5; i++) { const w = S * (0.8 - i * 0.14); box(cx - w / 2, by - S * (0.09 + i * 0.09), w, S * 0.09); }
+      box(cx - S * 0.05, by - S * 0.56, S * 0.1, S * 0.1); // temple on top
+    },
+    gatewayindia(cx, by, S) {
+      const w = S * 0.7, h = S * 0.6; box(cx - w / 2, by - h, w, h);
+      ctx.fillStyle = LMA; ctx.beginPath(); ctx.moveTo(cx - w * 0.18, by); ctx.lineTo(cx - w * 0.18, by - h * 0.6); ctx.quadraticCurveTo(cx, by - h * 0.85, cx + w * 0.18, by - h * 0.6); ctx.lineTo(cx + w * 0.18, by); ctx.closePath(); ctx.fill();
+      [-0.5, 0.5].forEach((d) => box(cx + d * w - S * 0.03, by - h - S * 0.06, S * 0.06, S * 0.08));
+    },
+    marinabay(cx, by, S) {
+      [-0.26, 0, 0.26].forEach((d) => box(cx + d * S - S * 0.05, by - S * 0.8, S * 0.1, S * 0.8));
+      ctx.fillStyle = LMC; ctx.beginPath(); ctx.moveTo(cx - S * 0.4, by - S * 0.84); ctx.quadraticCurveTo(cx, by - S * 0.98, cx + S * 0.4, by - S * 0.84); ctx.lineTo(cx + S * 0.36, by - S * 0.78); ctx.lineTo(cx - S * 0.36, by - S * 0.78); ctx.closePath(); ctx.fill();
+    },
+    campanile(cx, by, S) {
+      const h = S * 0.95, w = S * 0.13; box(cx - w / 2, by - h, w, h); lights(cx - w / 2, by - h * 0.85, w, h * 0.6);
+      box(cx - w * 0.6, by - h * 0.92, w * 1.2, h * 0.06); peak(cx, by - h, w, w * 1.1);
+    },
+    duomo(cx, by, S) {
+      box(cx - S * 0.3, by - S * 0.34, S * 0.6, S * 0.34); ctx.fillStyle = LMC;
+      ctx.beginPath(); ctx.moveTo(cx - S * 0.22, by - S * 0.34); ctx.quadraticCurveTo(cx, by - S * 0.78, cx + S * 0.22, by - S * 0.34); ctx.closePath(); ctx.fill();
+      box(cx - S * 0.03, by - S * 0.86, S * 0.06, S * 0.1);
+      box(cx + S * 0.34, by - S * 0.7, S * 0.1, S * 0.7); // campanile
+    },
+    cathedral(cx, by, S) {
+      box(cx - S * 0.3, by - S * 0.4, S * 0.6, S * 0.4); ctx.fillStyle = LMA; ctx.beginPath(); ctx.arc(cx, by - S * 0.3, S * 0.07, 0, 7); ctx.fill(); // rose window
+      [-0.26, 0.26].forEach((d) => { const x = cx + d * S; box(x - S * 0.06, by - S * 0.66, S * 0.12, S * 0.66); ctx.fillStyle = LMC; ctx.beginPath(); ctx.moveTo(x - S * 0.07, by - S * 0.66); ctx.lineTo(x, by - S * 0.92); ctx.lineTo(x + S * 0.07, by - S * 0.66); ctx.fill(); });
+    },
+    castle(cx, by, S) {
+      box(cx - S * 0.4, by - S * 0.45, S * 0.8, S * 0.45);
+      [-0.4, 0.4].forEach((d) => { const x = cx + d * S; box(x - S * 0.08, by - S * 0.62, S * 0.16, S * 0.62); for (let i = 0; i < 3; i++) box(x - S * 0.08 + i * S * 0.06, by - S * 0.66, S * 0.04, S * 0.05); });
+      ctx.fillStyle = LMA; ctx.beginPath(); ctx.moveTo(cx - S * 0.06, by); ctx.lineTo(cx - S * 0.06, by - S * 0.22); ctx.quadraticCurveTo(cx, by - S * 0.34, cx + S * 0.06, by - S * 0.22); ctx.lineTo(cx + S * 0.06, by); ctx.closePath(); ctx.fill();
+    },
+    pavilion(cx, by, S) {
+      for (let i = 0; i < 3; i++) { const w = S * (0.5 - i * 0.1), y = by - S * (0.14 + i * 0.16); box(cx - w / 2, y, w, S * 0.14); ctx.fillStyle = LMC; ctx.beginPath(); ctx.moveTo(cx - w * 0.62, y); ctx.lineTo(cx, y - S * 0.1); ctx.lineTo(cx + w * 0.62, y); ctx.closePath(); ctx.fill(); }
+      box(cx - 2, by - S * 0.62, 4, S * 0.05);
+    },
+    pagoda(cx, by, S) {
+      box(cx - S * 0.06, by - S * 0.1, S * 0.12, S * 0.1);
+      for (let i = 0; i < 5; i++) { const w = S * (0.5 - i * 0.08), y = by - S * (0.1 + i * 0.14); ctx.fillStyle = LMC; ctx.beginPath(); ctx.moveTo(cx - w / 2, y); ctx.quadraticCurveTo(cx, y - S * 0.04, cx + w / 2, y); ctx.lineTo(cx + w * 0.36, y - S * 0.1); ctx.lineTo(cx - w * 0.36, y - S * 0.1); ctx.closePath(); ctx.fill(); }
+    },
+  };
+
+  // generic-but-distinct civic features for long-tail cities (chosen by seed)
+  const FEATURES = [
+    function civicDome(cx, by, S) { box(cx - S * 0.3, by - S * 0.2, S * 0.6, S * 0.2); semi(cx, by - S * 0.2, S * 0.16, 1.3); box(cx - 1.5, by - S * 0.44, 3, S * 0.06); for (let i = 0; i < 6; i++) box(cx - S * 0.24 + i * S * 0.1, by - S * 0.3, S * 0.03, S * 0.1); },
+    function clockTower(cx, by, S) { const h = S * 0.8, w = h * 0.18; box(cx - w / 2, by - h, w, h); lights(cx - w / 2, by - h * 0.4, w, h * 0.4); ctx.fillStyle = LMA; ctx.beginPath(); ctx.arc(cx, by - h + w * 0.7, w * 0.3, 0, 7); ctx.fill(); peak(cx, by - h, w * 1.1, w * 0.7); },
+    function modernSpire(cx, by, S) { const h = S * 1.0; ctx.fillStyle = LMC; ctx.beginPath(); ctx.moveTo(cx - S * 0.1, by); ctx.lineTo(cx - S * 0.04, by - h * 0.8); ctx.lineTo(cx, by - h); ctx.lineTo(cx + S * 0.04, by - h * 0.8); ctx.lineTo(cx + S * 0.1, by); ctx.closePath(); ctx.fill(); lights(cx - S * 0.07, by - h * 0.7, S * 0.14, h * 0.6); },
+    function stadium(cx, by, S) { ctx.fillStyle = LMC; ctx.beginPath(); ctx.ellipse(cx, by - S * 0.04, S * 0.55, S * 0.26, 0, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.fillStyle = LMA; ctx.beginPath(); ctx.ellipse(cx, by - S * 0.12, S * 0.4, S * 0.12, 0, Math.PI, 0); ctx.fill(); },
+    function towerCluster(cx, by, S) { [-0.34, -0.12, 0.12, 0.34].forEach((d, i) => { const w = S * 0.18, h = S * (0.55 + (i % 2 ? 0.3 : 0.05)); box(cx + d * S - w / 2, by - h, w, h); lights(cx + d * S - w / 2, by - h * 0.9, w, h * 0.8); }); },
+    function riverBridge(cx, by, S) { box(0, by - S * 0.04, W, S * 0.02); ctx.strokeStyle = LMC; ctx.lineWidth = Math.max(2, S * 0.02); for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.arc(cx + k * S * 0.5, by + S * 0.12, S * 0.28, Math.PI, 0); ctx.stroke(); } },
+    function obeliskF(cx, by, S) { LANDMARKS.obelisk(cx, by, S); box(cx - S * 0.16, by - S * 0.05, S * 0.32, S * 0.05); },
+    function pagodaF(cx, by, S) { LANDMARKS.pagoda(cx, by, S); },
+  ];
+
+  // ---- deterministic, per-city procedural skyline -------------------------
+  function drawSkyline(topRef, alpha, rnd) {
+    ctx.fillStyle = `rgba(6,8,16,${alpha})`;
     let x = 0;
-    let i = 0;
+    const band = H - topRef;
     while (x < W) {
-      const bw = W * (0.04 + ((i * 37) % 5) * 0.012);
-      const bh = (topY) * (0.25 + ((i * 53) % 7) / 10);
+      const bw = W * (0.035 + rnd() * 0.05);
+      const bh = band * (0.35 + rnd() * 1.15);
       const by = H - bh;
       ctx.fillRect(x, by, bw - 2, bh);
-      // lit windows
-      ctx.fillStyle = 'rgba(255,221,130,0.7)';
-      for (let wy = by + 6; wy < H - 6; wy += 12) {
-        for (let wx = x + 4; wx < x + bw - 6; wx += 9) {
-          if (((wx + wy + i) * 13 % 7) < 3) ctx.fillRect(wx, wy, 4, 6);
-        }
-      }
-      ctx.fillStyle = color;
-      x += bw; i++;
+      if (rnd() < 0.25) ctx.fillRect(x + bw * 0.4, by - bh * 0.12, bw * 0.12, bh * 0.12); // antenna/spire
+      x += bw;
     }
+    // a sparse scatter of warm lit windows over the same band
+    ctx.fillStyle = LMA;
+    const lr = mulberry32((alpha * 99991 + topRef) | 0);
+    for (let i = 0; i < W / 6; i++) { if (lr() < 0.10) ctx.fillRect(lr() * W, topRef + lr() * band * 1.4, 3, 4); }
   }
+
+  // ---- world cities catalog (city, country, flag, landmark key | undefined) --
+  // No key → a unique procedural skyline + a seeded civic feature.
+  const PLACES = [
+    ['Paris', 'France', '🇫🇷', 'eiffel'], ['Lyon', 'France', '🇫🇷'], ['Marseille', 'France', '🇫🇷'], ['Nice', 'France', '🇫🇷'], ['Bordeaux', 'France', '🇫🇷'],
+    ['London', 'United Kingdom', '🇬🇧', 'bigben'], ['London', 'United Kingdom', '🇬🇧', 'towerbridge'], ['Edinburgh', 'Scotland', '🏴', 'castle'], ['Manchester', 'United Kingdom', '🇬🇧'], ['Liverpool', 'United Kingdom', '🇬🇧'], ['Dublin', 'Ireland', '🇮🇪'],
+    ['Berlin', 'Germany', '🇩🇪', 'brandenburg'], ['Munich', 'Germany', '🇩🇪', 'neuschwanstein'], ['Hamburg', 'Germany', '🇩🇪'], ['Cologne', 'Germany', '🇩🇪', 'cathedral'], ['Frankfurt', 'Germany', '🇩🇪'],
+    ['Rome', 'Italy', '🇮🇹', 'colosseum'], ['Milan', 'Italy', '🇮🇹', 'cathedral'], ['Venice', 'Italy', '🇮🇹', 'campanile'], ['Florence', 'Italy', '🇮🇹', 'duomo'], ['Pisa', 'Italy', '🇮🇹', 'leaningtower'], ['Naples', 'Italy', '🇮🇹'], ['Turin', 'Italy', '🇮🇹'],
+    ['Vatican City', 'Vatican', '🇻🇦', 'duomo'],
+    ['Madrid', 'Spain', '🇪🇸'], ['Barcelona', 'Spain', '🇪🇸', 'sagrada'], ['Seville', 'Spain', '🇪🇸'], ['Valencia', 'Spain', '🇪🇸'],
+    ['Lisbon', 'Portugal', '🇵🇹'], ['Porto', 'Portugal', '🇵🇹'],
+    ['Amsterdam', 'Netherlands', '🇳🇱', 'windmill'], ['Rotterdam', 'Netherlands', '🇳🇱'], ['Brussels', 'Belgium', '🇧🇪', 'atomium'], ['Bruges', 'Belgium', '🇧🇪'],
+    ['Vienna', 'Austria', '🇦🇹', 'cathedral'], ['Prague', 'Czechia', '🇨🇿', 'castle'], ['Budapest', 'Hungary', '🇭🇺'], ['Warsaw', 'Poland', '🇵🇱'], ['Kraków', 'Poland', '🇵🇱'],
+    ['Athens', 'Greece', '🇬🇷', 'parthenon'], ['Santorini', 'Greece', '🇬🇷'],
+    ['Moscow', 'Russia', '🇷🇺', 'stbasils'], ['Saint Petersburg', 'Russia', '🇷🇺'], ['Kyiv', 'Ukraine', '🇺🇦'],
+    ['Stockholm', 'Sweden', '🇸🇪'], ['Oslo', 'Norway', '🇳🇴'], ['Copenhagen', 'Denmark', '🇩🇰'], ['Helsinki', 'Finland', '🇫🇮'], ['Reykjavik', 'Iceland', '🇮🇸'],
+    ['Zürich', 'Switzerland', '🇨🇭'], ['Geneva', 'Switzerland', '🇨🇭'], ['Zermatt', 'Switzerland', '🇨🇭', 'matterhorn'],
+    ['Istanbul', 'Türkiye', '🇹🇷', 'bluemosque'], ['Ankara', 'Türkiye', '🇹🇷'],
+    ['New York', 'USA', '🇺🇸', 'liberty'], ['Los Angeles', 'USA', '🇺🇸', 'hollywood'], ['San Francisco', 'USA', '🇺🇸', 'goldengate'], ['Chicago', 'USA', '🇺🇸'], ['Seattle', 'USA', '🇺🇸', 'spaceneedle'],
+    ['Washington', 'USA', '🇺🇸', 'capitoldome'], ['Boston', 'USA', '🇺🇸'], ['Las Vegas', 'USA', '🇺🇸'], ['Miami', 'USA', '🇺🇸'], ['St. Louis', 'USA', '🇺🇸', 'gatewayarch'], ['New Orleans', 'USA', '🇺🇸'], ['Houston', 'USA', '🇺🇸'], ['Philadelphia', 'USA', '🇺🇸'], ['Honolulu', 'USA', '🇺🇸'],
+    ['Toronto', 'Canada', '🇨🇦', 'cntower'], ['Vancouver', 'Canada', '🇨🇦'], ['Montréal', 'Canada', '🇨🇦'], ['Ottawa', 'Canada', '🇨🇦'],
+    ['Mexico City', 'Mexico', '🇲🇽'], ['Chichén Itzá', 'Mexico', '🇲🇽', 'steppyramid'], ['Cancún', 'Mexico', '🇲🇽'], ['Guadalajara', 'Mexico', '🇲🇽'],
+    ['Rio de Janeiro', 'Brazil', '🇧🇷', 'christredeemer'], ['São Paulo', 'Brazil', '🇧🇷'], ['Brasília', 'Brazil', '🇧🇷'], ['Salvador', 'Brazil', '🇧🇷'],
+    ['Buenos Aires', 'Argentina', '🇦🇷', 'obelisk'], ['Lima', 'Peru', '🇵🇪'], ['Cusco', 'Peru', '🇵🇪'], ['Santiago', 'Chile', '🇨🇱'], ['Bogotá', 'Colombia', '🇨🇴'], ['Cartagena', 'Colombia', '🇨🇴'], ['Havana', 'Cuba', '🇨🇺'], ['Quito', 'Ecuador', '🇪🇨'], ['Montevideo', 'Uruguay', '🇺🇾'],
+    ['Tokyo', 'Japan', '🇯🇵', 'tokyotower'], ['Tokyo', 'Japan', '🇯🇵', 'skytree'], ['Osaka', 'Japan', '🇯🇵', 'castle'], ['Kyoto', 'Japan', '🇯🇵', 'pavilion'], ['Yokohama', 'Japan', '🇯🇵'], ['Sapporo', 'Japan', '🇯🇵'], ['Nara', 'Japan', '🇯🇵', 'pagoda'],
+    ['Beijing', 'China', '🇨🇳', 'greatwall'], ['Shanghai', 'China', '🇨🇳', 'orientalpearl'], ['Hong Kong', 'China', '🇭🇰'], ['Guangzhou', 'China', '🇨🇳'], ["Xi'an", 'China', '🇨🇳', 'pagoda'], ['Shenzhen', 'China', '🇨🇳'], ['Chengdu', 'China', '🇨🇳'],
+    ['Taipei', 'Taiwan', '🇹🇼', 'taipei101'], ['Seoul', 'South Korea', '🇰🇷'], ['Busan', 'South Korea', '🇰🇷'],
+    ['Singapore', 'Singapore', '🇸🇬', 'marinabay'], ['Kuala Lumpur', 'Malaysia', '🇲🇾', 'petronas'],
+    ['Bangkok', 'Thailand', '🇹🇭', 'pavilion'], ['Chiang Mai', 'Thailand', '🇹🇭'], ['Hanoi', 'Vietnam', '🇻🇳'], ['Ho Chi Minh City', 'Vietnam', '🇻🇳'], ['Siem Reap', 'Cambodia', '🇰🇭', 'pagoda'],
+    ['Jakarta', 'Indonesia', '🇮🇩'], ['Bali', 'Indonesia', '🇮🇩'], ['Manila', 'Philippines', '🇵🇭'],
+    ['Mumbai', 'India', '🇮🇳', 'gatewayindia'], ['New Delhi', 'India', '🇮🇳'], ['Agra', 'India', '🇮🇳', 'tajmahal'], ['Jaipur', 'India', '🇮🇳', 'castle'], ['Bengaluru', 'India', '🇮🇳'], ['Kolkata', 'India', '🇮🇳'], ['Chennai', 'India', '🇮🇳'],
+    ['Kathmandu', 'Nepal', '🇳🇵', 'pagoda'], ['Colombo', 'Sri Lanka', '🇱🇰'],
+    ['Dubai', 'UAE', '🇦🇪', 'burjkhalifa'], ['Abu Dhabi', 'UAE', '🇦🇪', 'bluemosque'], ['Doha', 'Qatar', '🇶🇦'], ['Riyadh', 'Saudi Arabia', '🇸🇦'], ['Jeddah', 'Saudi Arabia', '🇸🇦'],
+    ['Jerusalem', 'Israel', '🇮🇱', 'bluemosque'], ['Tel Aviv', 'Israel', '🇮🇱'], ['Amman', 'Jordan', '🇯🇴'], ['Beirut', 'Lebanon', '🇱🇧'], ['Tehran', 'Iran', '🇮🇷'],
+    ['Cairo', 'Egypt', '🇪🇬', 'sphinxpyramid'], ['Giza', 'Egypt', '🇪🇬', 'sphinxpyramid'], ['Marrakesh', 'Morocco', '🇲🇦'], ['Casablanca', 'Morocco', '🇲🇦', 'bluemosque'],
+    ['Cape Town', 'South Africa', '🇿🇦', 'tablemountain'], ['Johannesburg', 'South Africa', '🇿🇦'], ['Nairobi', 'Kenya', '🇰🇪'], ['Lagos', 'Nigeria', '🇳🇬'], ['Accra', 'Ghana', '🇬🇭'], ['Addis Ababa', 'Ethiopia', '🇪🇹'], ['Tunis', 'Tunisia', '🇹🇳'], ['Algiers', 'Algeria', '🇩🇿'], ['Dakar', 'Senegal', '🇸🇳'],
+    ['Sydney', 'Australia', '🇦🇺', 'operahouse'], ['Sydney', 'Australia', '🇦🇺', 'harbourbridge'], ['Melbourne', 'Australia', '🇦🇺'], ['Brisbane', 'Australia', '🇦🇺'], ['Perth', 'Australia', '🇦🇺'],
+    ['Auckland', 'New Zealand', '🇳🇿'], ['Wellington', 'New Zealand', '🇳🇿'], ['Queenstown', 'New Zealand', '🇳🇿', 'matterhorn'],
+    // — more of the world (unique seeded skylines unless a landmark is noted) —
+    ['Stuttgart', 'Germany', '🇩🇪'], ['Düsseldorf', 'Germany', '🇩🇪'], ['Dresden', 'Germany', '🇩🇪'],
+    ['Birmingham', 'United Kingdom', '🇬🇧'], ['Glasgow', 'Scotland', '🏴'], ['Cardiff', 'Wales', '🏴'], ['Belfast', 'United Kingdom', '🇬🇧'],
+    ['The Hague', 'Netherlands', '🇳🇱'], ['Antwerp', 'Belgium', '🇧🇪'], ['Luxembourg', 'Luxembourg', '🇱🇺'],
+    ['Bratislava', 'Slovakia', '🇸🇰', 'castle'], ['Ljubljana', 'Slovenia', '🇸🇮'], ['Zagreb', 'Croatia', '🇭🇷'], ['Dubrovnik', 'Croatia', '🇭🇷', 'castle'],
+    ['Belgrade', 'Serbia', '🇷🇸'], ['Bucharest', 'Romania', '🇷🇴'], ['Sofia', 'Bulgaria', '🇧🇬', 'cathedral'],
+    ['Tallinn', 'Estonia', '🇪🇪'], ['Riga', 'Latvia', '🇱🇻'], ['Vilnius', 'Lithuania', '🇱🇹'],
+    ['Bilbao', 'Spain', '🇪🇸'], ['Málaga', 'Spain', '🇪🇸'], ['Genoa', 'Italy', '🇮🇹'], ['Bologna', 'Italy', '🇮🇹'], ['Verona', 'Italy', '🇮🇹'],
+    ['Toulouse', 'France', '🇫🇷'], ['Strasbourg', 'France', '🇫🇷', 'cathedral'], ['Nantes', 'France', '🇫🇷'],
+    ['Gothenburg', 'Sweden', '🇸🇪'], ['Bergen', 'Norway', '🇳🇴'], ['Bern', 'Switzerland', '🇨🇭'], ['Salzburg', 'Austria', '🇦🇹', 'castle'],
+    ['Gdańsk', 'Poland', '🇵🇱'], ['Thessaloniki', 'Greece', '🇬🇷'], ['Valletta', 'Malta', '🇲🇹'], ['Monaco', 'Monaco', '🇲🇨'],
+    ['Sarajevo', 'Bosnia', '🇧🇦'], ['Tirana', 'Albania', '🇦🇱'], ['Skopje', 'N. Macedonia', '🇲🇰'],
+    ['San Diego', 'USA', '🇺🇸'], ['Dallas', 'USA', '🇺🇸'], ['Atlanta', 'USA', '🇺🇸'], ['Denver', 'USA', '🇺🇸'], ['Phoenix', 'USA', '🇺🇸'], ['Austin', 'USA', '🇺🇸'], ['Portland', 'USA', '🇺🇸'], ['Nashville', 'USA', '🇺🇸'], ['Detroit', 'USA', '🇺🇸'], ['Pittsburgh', 'USA', '🇺🇸'],
+    ['Calgary', 'Canada', '🇨🇦'], ['Québec City', 'Canada', '🇨🇦', 'castle'], ['Winnipeg', 'Canada', '🇨🇦'],
+    ['Monterrey', 'Mexico', '🇲🇽'], ['Medellín', 'Colombia', '🇨🇴'], ['Caracas', 'Venezuela', '🇻🇪'], ['La Paz', 'Bolivia', '🇧🇴'], ['Asunción', 'Paraguay', '🇵🇾'], ['Panama City', 'Panama', '🇵🇦'], ['San José', 'Costa Rica', '🇨🇷'], ['Guatemala City', 'Guatemala', '🇬🇹'], ['Santo Domingo', 'Dominican Rep.', '🇩🇴'], ['San Juan', 'Puerto Rico', '🇵🇷'],
+    ['Nagoya', 'Japan', '🇯🇵'], ['Fukuoka', 'Japan', '🇯🇵'], ['Incheon', 'South Korea', '🇰🇷'], ['Tianjin', 'China', '🇨🇳'], ['Wuhan', 'China', '🇨🇳'], ['Hangzhou', 'China', '🇨🇳'], ['Nanjing', 'China', '🇨🇳'], ['Macau', 'China', '🇲🇴'],
+    ['Surabaya', 'Indonesia', '🇮🇩'], ['Cebu', 'Philippines', '🇵🇭'], ['Da Nang', 'Vietnam', '🇻🇳'], ['Phnom Penh', 'Cambodia', '🇰🇭'], ['Vientiane', 'Laos', '🇱🇦', 'pagoda'], ['Yangon', 'Myanmar', '🇲🇲', 'pagoda'],
+    ['Dhaka', 'Bangladesh', '🇧🇩'], ['Karachi', 'Pakistan', '🇵🇰'], ['Lahore', 'Pakistan', '🇵🇰', 'bluemosque'], ['Islamabad', 'Pakistan', '🇵🇰'], ['Hyderabad', 'India', '🇮🇳'], ['Pune', 'India', '🇮🇳'], ['Ahmedabad', 'India', '🇮🇳'],
+    ['Ulaanbaatar', 'Mongolia', '🇲🇳'], ['Tashkent', 'Uzbekistan', '🇺🇿', 'bluemosque'], ['Almaty', 'Kazakhstan', '🇰🇿'], ['Baku', 'Azerbaijan', '🇦🇿'], ['Tbilisi', 'Georgia', '🇬🇪'], ['Yerevan', 'Armenia', '🇦🇲'], ['Kuwait City', 'Kuwait', '🇰🇼'], ['Muscat', 'Oman', '🇴🇲', 'bluemosque'],
+    ['Alexandria', 'Egypt', '🇪🇬'], ['Luxor', 'Egypt', '🇪🇬', 'obelisk'], ['Rabat', 'Morocco', '🇲🇦'], ['Fez', 'Morocco', '🇲🇦'], ['Mombasa', 'Kenya', '🇰🇪'], ['Kampala', 'Uganda', '🇺🇬'], ['Dar es Salaam', 'Tanzania', '🇹🇿'], ['Maputo', 'Mozambique', '🇲🇿'], ['Luanda', 'Angola', '🇦🇴'], ['Abidjan', 'Côte d’Ivoire', '🇨🇮'], ['Durban', 'South Africa', '🇿🇦'], ['Pretoria', 'South Africa', '🇿🇦'],
+    ['Adelaide', 'Australia', '🇦🇺'], ['Canberra', 'Australia', '🇦🇺'], ['Gold Coast', 'Australia', '🇦🇺'], ['Hobart', 'Australia', '🇦🇺'], ['Christchurch', 'New Zealand', '🇳🇿'], ['Suva', 'Fiji', '🇫🇯'], ['Papeete', 'Tahiti', '🇵🇫'],
+  ].map((p) => ({ city: p[0], country: p[1], flag: p[2], kind: p[3] }));
+
+  const cityTheme = {
+    key: 'city', emojis: ['🎉', '🥳', '🎊', '🎵', '✨', '🌍'],
+    label() { const p = scene.place; return p ? `${p.flag} ${p.city}, ${p.country}` : '🌍 World Tour'; },
+    onShow() {
+      scene.place = pick(PLACES);
+      scene.palette = pick(SKY);
+      scene.seed = hashStr(scene.place.city + '|' + scene.place.country);
+      LMA = scene.palette.acc || '#ffe1a0';
+      const k = scene.place.kind;
+      scene.landmark = (k && LANDMARKS[k]) ? LANDMARKS[k] : null;
+    },
+    bg(t) {
+      const pal = scene.palette || SKY[0];
+      vgrad(pal.stops);
+      if (pal.night) { stars(t); moon(); } else { sun(pal); }
+      // two seeded skylines for depth — unique per city, stable across frames
+      drawSkyline(H * 0.70, 0.30, mulberry32(scene.seed ^ 0x9e3779b9));
+      drawSkyline(H * 0.82, 0.55, mulberry32(scene.seed ^ 0x85ebca6b));
+      // hero landmark (bespoke) or a seeded civic feature for long-tail cities
+      const cx = W * 0.5, by = H * 0.83, S = MIN() * 0.5;
+      if (scene.landmark) scene.landmark(cx, by, S);
+      else FEATURES[scene.seed % FEATURES.length](cx, by, S);
+    },
+  };
 
   // ---- particles (the note fountain + cascade) ----------------------------
   function glyphPool() { return NOTE_GLYPHS.concat(theme && theme.emojis ? theme.emojis : []); }
@@ -478,8 +775,13 @@
     raf = requestAnimationFrame(frame);
   }
 
+  // Weighted toward the world-cities theme (hundreds of locations) so the global
+  // tour shows up often, with the fantasy scenes sprinkled in.
+  function pickTheme() { return Math.random() < 0.6 ? cityTheme : THEMES[(Math.random() * THEMES.length) | 0]; }
+
   function startOne(opts) {
-    theme = opts.theme ? (THEMES.find((x) => x.key === opts.theme) || pick(THEMES)) : pick(THEMES);
+    const all = THEMES.concat(cityTheme);
+    theme = opts.theme ? (all.find((x) => x.key === opts.theme) || pickTheme()) : pickTheme();
     if (theme.onShow) theme.onShow();
     kickerEl.textContent = opts.kicker || pick(KICKERS);
     titleEl.textContent = opts.title || 'MILESTONE!';
@@ -517,5 +819,6 @@
     show,
     isActive: () => active,
     THEMES, // exposed for a debug preview
+    _debug: { LANDMARKS, FEATURES, PLACES, SKY, cityTheme },
   };
 })(window.App = window.App || {});
