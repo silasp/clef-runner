@@ -145,6 +145,24 @@ button { font-family: inherit; cursor: pointer; }
 .signin-row input { flex: 1; min-width: 140px; background: var(--bg-2); border: 1px solid var(--edge); color: var(--text); border-radius: 10px; padding: 11px 12px; font-size: 15px; }
 #googleBtnHost { min-height: 0; }
 
+/* ---- local profile picker ("this is me") ---- */
+.profile-picker { margin-top: 10px; }
+.profile-picker .pp-hint { color: var(--muted); font-size: 13px; line-height: 1.4; margin-bottom: 10px; }
+.profile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.profile-card {
+  position: relative; text-align: left; cursor: pointer;
+  display: flex; flex-direction: column; gap: 3px;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius);
+  padding: 12px 14px; color: var(--text);
+}
+.profile-card:hover { border-color: var(--muted); }
+.profile-card.active { border-color: var(--accent); background: linear-gradient(140deg, rgba(255,210,74,.14), var(--panel)); cursor: default; }
+.profile-card .pf-name { font-weight: 700; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 18px; }
+.profile-card .pf-meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.profile-card .pf-badge { margin-top: 4px; align-self: flex-start; font-size: 11px; font-weight: 700; color: var(--accent); }
+.profile-card .pf-del { position: absolute; top: 6px; right: 8px; color: var(--muted); font-size: 18px; line-height: 1; padding: 2px 4px; border-radius: 6px; }
+.profile-card .pf-del:hover { color: var(--bad); background: var(--bg-2); }
+
 .board { background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius); overflow: hidden; }
 .board .b-row { display: grid; grid-template-columns: 28px 1fr auto auto; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--edge); font-size: 14px; }
 .board .b-row:first-child { border-top: 0; }

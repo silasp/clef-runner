@@ -403,6 +403,39 @@
     }
   }
 
+  // "This is me" picker — only surfaces when more than one local profile exists
+  // on the device (e.g. created across tabs/sessions). Selecting one makes it the
+  // active player; same-named profiles are already deduped by the stats store.
+  function renderProfiles() {
+    const host = $('profilePicker'); if (!host) return;
+    const list = App.Stats.listProfiles();
+    if (list.length <= 1) { host.style.display = 'none'; host.innerHTML = ''; return; }
+    host.style.display = '';
+    host.innerHTML = '<div class="pp-hint">Found more than one local profile on this device — pick the one that’s you (we keep all your progress on whichever you choose):</div>';
+    const grid = el('div', 'profile-grid');
+    list.forEach((p) => {
+      const nm = p.name || 'Unnamed player';
+      const card = el('button', 'profile-card' + (p.active ? ' active' : ''));
+      card.innerHTML = `<span class="pf-name">${escapeHtml(nm)}</span>`
+        + `<span class="pf-meta">${p.score.toLocaleString()} pts · ${fmtDur(p.timeMs)}</span>`
+        + (p.active ? '<span class="pf-badge">✓ me</span>' : '');
+      card.onclick = () => {
+        if (p.active) return;
+        if (p.name) App.Auth.signInGuest(p.name);     // drives selection + account box
+        else { App.Stats.selectProfile(p.id); App.Auth.signOut(); }
+        renderMenu();
+      };
+      const del = el('span', 'pf-del'); del.textContent = '×'; del.title = 'Remove this profile';
+      del.onclick = (e) => {
+        e.stopPropagation();
+        if (window.confirm(`Remove the local profile “${nm}”? This can’t be undone.`)) { App.Stats.deleteProfile(p.id); renderMenu(); }
+      };
+      card.appendChild(del);
+      grid.appendChild(card);
+    });
+    host.appendChild(grid);
+  }
+
   function renderStats() {
     const host = $('statsPanel'); if (!host) return;
     const s = App.Stats.get();
@@ -626,6 +659,7 @@
     renderToggle('tglMetro', state.settings.metronome);
     renderToggle('tglMic', state.settings.mic);
     renderAccount();
+    renderProfiles();
     renderStats();
     renderTreasure();
     renderPassport();
@@ -723,7 +757,7 @@
     ic.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('gesturestart', (e) => e.preventDefault());
 
-    App.Auth.onChange((p) => { App.Stats.setName(p ? p.name : ''); saveSettings(); if (gameVisible()) return; renderMenu(); });
+    App.Auth.onChange((p) => { if (p && p.name) App.Stats.selectOrCreateByName(p.name); saveSettings(); if (gameVisible()) return; renderMenu(); });
   }
   function bindSeg(id, fn) {
     document.querySelectorAll('#' + id + ' button').forEach((b) => {
