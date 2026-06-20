@@ -622,14 +622,16 @@
       return false;
     }
 
-    // Microphone play-along: octave-tolerant pitch-class match, lenient (a wrong
-    // pitch is ignored rather than penalised). Returns {result:'good',...} or null.
-    handleMic(midi) {
+    // Microphone play-along: polyphonic + octave-tolerant. `pcs` is the set of
+    // pitch classes currently sounding; a hit needs only the target among them
+    // (so ringing strings/overtones don't block it). Lenient: a non-match is
+    // ignored rather than penalised. Returns {result:'good',...} or null.
+    handleMic(pcs) {
       if (this.status !== 'playing') return null;
       const a = this.active;
-      if (a == null) return null;
-      const pc = (m) => (((m % 12) + 12) % 12);
-      if (pc(midi) === pc(a.note.midi)) {
+      if (a == null || !pcs || !pcs.length) return null;
+      const target = (((a.note.midi % 12) + 12) % 12);
+      if (pcs.indexOf(target) !== -1) {
         const mult = this.multiplier();
         this.score += mult; this.streak++;
         this.bestStreak = Math.max(this.bestStreak, this.streak);

@@ -17,7 +17,7 @@
     inst: 'piano',
     settings: { mode: 'licks', genre: 'all', difficulty: 'medium', speed: 'steady', clef: 'treble', showHints: true, sound: true, livesMode: false, randomKey: false, octaveShift: true, timeSig: '4/4', mic: false, metronome: false, scaleTypes: ['major'], libraryIds: [] },
   };
-  const micState = { lastFire: null, silentFrames: 0, armed: true, lastRms: 0 };
+  const micState = { lastFireTime: 0, silentFrames: 0, armed: true, lastRms: 0 };
   let game = new App.Game();
   let instrument = null;
   let staffCtx, instCtx, staffRect, instRect;
@@ -143,32 +143,34 @@
     if (!p || p.midi == null) {
       micState.silentFrames++;
       micState.lastRms = p ? p.rms : 0;
-      if (micState.silentFrames > 2) { micState.armed = true; micState.lastFire = null; updateTuner(null); }
+      if (micState.silentFrames > 2) { micState.armed = true; updateTuner(null); }
       return;
     }
-    // A sharp jump in level is a fresh pluck — re-arm so the same pitch played
-    // twice in a row registers without needing a full gap of silence between.
-    if (p.rms > (micState.lastRms || 0) * 1.6 + 0.01) micState.armed = true;
+    // A sharp jump in level is a fresh pluck — re-arm so a new note registers
+    // even if the previous one is still ringing underneath it.
+    const onset = p.rms > (micState.lastRms || 0) * 1.6 + 0.01;
     micState.lastRms = p.rms;
     micState.silentFrames = 0;
-    updateTuner(p.freq);
+    updateTuner(p.freq); // the dominant pitch drives the tuner display
     if (!playing) return; // paused: tuner only, no note scoring
-    // Fire on the first valid reading. Matching is octave-tolerant and a wrong
-    // pitch is ignored (never penalised), so leaning sensitive only helps. The
-    // armed/lastFire pair keeps one sustained note from firing every frame.
-    if (micState.armed || p.midi !== micState.lastFire) {
-      handleMicNote(p.midi);
-      micState.lastFire = p.midi; micState.armed = false;
-    }
-  }
-  function handleMicNote(midi) {
-    const res = game.handleMic(midi);
-    if (res && res.result === 'good') {
-      instrument.cellsForMidi(res.note.midi).forEach((c) => instrument.flashCell(c.id, 'good'));
-      flashScreen('good');
-      if (res.treasure) bankTreasure();
-      else showPopup(res.multiplier > 1 ? `+${res.multiplier}` : '+1', res.multiplier > 1);
-      updateHud();
+    const now = performance.now();
+    // Re-arm on a fresh pluck, or after a short refractory so a missed onset
+    // never leaves us stuck unable to match the next note.
+    if (onset || now - micState.lastFireTime > 140) micState.armed = true;
+    // Polyphonic match: pass if the target pitch class is among those sounding.
+    // Matching is lenient (a miss is never penalised), so leaning sensitive only
+    // helps; the armed/refractory pair keeps one pluck from clearing several.
+    if (micState.armed) {
+      const res = game.handleMic(p.pcs);
+      if (res && res.result === 'good') {
+        instrument.cellsForMidi(res.note.midi).forEach((c) => instrument.flashCell(c.id, 'good'));
+        flashScreen('good');
+        if (res.treasure) bankTreasure();
+        else showPopup(res.multiplier > 1 ? `+${res.multiplier}` : '+1', res.multiplier > 1);
+        updateHud();
+        micState.armed = false;
+        micState.lastFireTime = now;
+      }
     }
   }
   async function enableMic() {
