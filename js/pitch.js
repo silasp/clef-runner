@@ -7,6 +7,8 @@
   'use strict';
 
   const SIZE = 2048;
+  const MIN_FREQ = 60;    // a touch below low-E guitar / bass, with margin
+  const MAX_FREQ = 1600;  // above the top of a guitar's range
   let ctx = null, analyser = null, stream = null, source = null, buf = null, running = false;
 
   async function start() {
@@ -34,42 +36,52 @@
   }
 
   // Returns { freq, midi, clarity, rms } or null. midi is null when no pitch.
+  // Time-domain autocorrelation restricted to the plausible pitch-lag window —
+  // this is both faster (so it can run every frame) and avoids picking sub-
+  // harmonics that would land on the wrong pitch class. Thresholds lean toward
+  // reporting a note: a wrong reading is harmless (the game ignores mismatches),
+  // while a missed reading costs a note.
   function detect() {
     if (!running) return null;
     analyser.getFloatTimeDomainData(buf);
-    let rms = 0;
-    for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
-    rms = Math.sqrt(rms / SIZE);
-    if (rms < 0.012) return { freq: 0, midi: null, clarity: 0, rms }; // noise gate
+    let c0 = 0;
+    for (let i = 0; i < SIZE; i++) c0 += buf[i] * buf[i];
+    const rms = Math.sqrt(c0 / SIZE);
+    if (rms < 0.006 || c0 <= 0) return { freq: 0, midi: null, clarity: 0, rms }; // noise gate
 
-    // trim near-silent edges
-    let r1 = 0, r2 = SIZE - 1; const thres = 0.2;
-    for (let i = 0; i < SIZE / 2; i++) { if (Math.abs(buf[i]) < thres) { r1 = i; break; } }
-    for (let i = 1; i < SIZE / 2; i++) { if (Math.abs(buf[SIZE - i]) < thres) { r2 = SIZE - i; break; } }
-    const n = r2 - r1;
-    if (n < 128) return { freq: 0, midi: null, clarity: 0, rms };
+    const sr = ctx.sampleRate;
+    const minLag = Math.max(2, Math.floor(sr / MAX_FREQ));
+    const maxLag = Math.min(SIZE - 2, Math.ceil(sr / MIN_FREQ));
 
-    const c = new Float32Array(n);
-    for (let lag = 0; lag < n; lag++) {
+    const c = new Float32Array(maxLag + 2);
+    for (let lag = minLag; lag <= maxLag; lag++) {
       let sum = 0;
-      for (let i = 0; i < n - lag; i++) sum += buf[r1 + i] * buf[r1 + i + lag];
+      for (let i = 0; i + lag < SIZE; i++) sum += buf[i] * buf[i + lag];
       c[lag] = sum;
     }
-    // first ascending zone, then the strongest peak
-    let d = 0; while (d < n - 1 && c[d] > c[d + 1]) d++;
-    let maxval = -1, maxpos = -1;
-    for (let i = d; i < n; i++) if (c[i] > maxval) { maxval = c[i]; maxpos = i; }
-    if (maxpos <= 0) return { freq: 0, midi: null, clarity: 0, rms };
 
-    // parabolic interpolation around the peak
-    let T0 = maxpos;
-    const x1 = c[T0 - 1] || 0, x2 = c[T0], x3 = c[T0 + 1] || 0;
+    // strongest correlation peak in the window …
+    let maxval = -Infinity, maxpos = -1;
+    for (let lag = minLag; lag <= maxLag; lag++) if (c[lag] > maxval) { maxval = c[lag]; maxpos = lag; }
+    if (maxpos < 0 || maxval <= 0) return { freq: 0, midi: null, clarity: 0, rms };
+
+    // … but prefer the FIRST peak that reaches most of it: that's the
+    // fundamental period, so we don't report an octave-and-a-fifth too low.
+    const thresh = maxval * 0.85;
+    let pos = maxpos;
+    for (let lag = minLag + 1; lag < maxLag; lag++) {
+      if (c[lag] >= thresh && c[lag] > c[lag - 1] && c[lag] >= c[lag + 1]) { pos = lag; break; }
+    }
+
+    // parabolic interpolation around the chosen peak
+    let T0 = pos;
+    const x1 = c[pos - 1] || 0, x2 = c[pos], x3 = c[pos + 1] || 0;
     const a = (x1 + x3 - 2 * x2) / 2, b = (x3 - x1) / 2;
-    if (a) T0 = T0 - b / (2 * a);
+    if (a) T0 = pos - b / (2 * a);
 
-    const clarity = maxval / (c[0] || 1);
-    const freq = ctx.sampleRate / T0;
-    if (freq < 70 || freq > 1600 || clarity < 0.5) return { freq, midi: null, clarity, rms };
+    const clarity = maxval / c0;
+    const freq = sr / T0;
+    if (freq < MIN_FREQ || freq > MAX_FREQ || clarity < 0.3) return { freq, midi: null, clarity, rms };
     const midi = Math.round(69 + 12 * Math.log2(freq / 440));
     return { freq, midi, clarity, rms };
   }
