@@ -36,6 +36,7 @@
   // fifths order, per clef.
   const KS_TREBLE = { sharp: [['F', 5], ['C', 5], ['G', 5], ['D', 5], ['A', 4], ['E', 5], ['B', 4]], flat: [['B', 4], ['E', 5], ['A', 4], ['D', 5], ['G', 4], ['C', 5], ['F', 4]] };
   const KS_BASS = { sharp: [['F', 3], ['C', 3], ['G', 3], ['D', 3], ['A', 2], ['E', 3], ['B', 2]], flat: [['B', 2], ['E', 3], ['A', 2], ['D', 3], ['G', 2], ['C', 3], ['F', 2]] };
+  const KS_ALTO = { sharp: [['F', 4], ['C', 4], ['G', 4], ['D', 4], ['A', 3], ['E', 4], ['B', 3]], flat: [['B', 3], ['E', 4], ['A', 3], ['D', 4], ['G', 3], ['C', 4], ['F', 3]] };
   function drawKeySig(ctx, fifths, ks, x0, dx, yFor, gap, color) {
     if (!fifths) return;
     const arr = fifths > 0 ? ks.sharp : ks.flat;
@@ -676,10 +677,11 @@
       ctx.fillStyle = STAFF.clef;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = `${gap * 5.2}px "Bravura","Noto Music",serif`;
-      ctx.fillText(this.clef.glyph, rect.x + ins + gap * 1.7, middleY + (this.clef === T.CLEFS.treble ? gap * 0.4 : -gap * 0.2));
+      const clefDy = this.clef === T.CLEFS.treble ? gap * 0.4 : this.clef === T.CLEFS.alto ? 0 : -gap * 0.2;
+      ctx.fillText(this.clef.glyph, rect.x + ins + gap * 1.7, middleY + clefDy);
 
       // key signature
-      const ks = this.clef === T.CLEFS.bass ? KS_BASS : KS_TREBLE;
+      const ks = this.clef === T.CLEFS.bass ? KS_BASS : this.clef === T.CLEFS.alto ? KS_ALTO : KS_TREBLE;
       drawKeySig(ctx, this._sigFifths(), ks, rect.x + ins + gap * 3.4, gap * 0.95, yFor, gap, STAFF.clef);
 
       // notes
