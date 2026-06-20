@@ -170,13 +170,14 @@
   const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
   function updateTuner(freq) {
     const el = $('tuner'); if (!el) return;
-    if (!freq) { el.classList.remove('lit'); $('tunerNote').textContent = '—'; $('tunerCents').textContent = ''; $('tunerNeedle').style.left = '50%'; return; }
+    if (!freq) { el.classList.remove('lit'); $('tunerNote').textContent = '—'; $('tunerCents').textContent = ''; $('tunerNeedle').style.top = '50%'; return; }
     const { midi, cents } = App.Theory.centsOff(freq);
     el.classList.add('lit');
     el.classList.toggle('intune', Math.abs(cents) <= 12);
     $('tunerNote').textContent = NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
     $('tunerCents').textContent = (cents > 0 ? '+' : '') + cents + '¢';
-    $('tunerNeedle').style.left = Math.max(2, Math.min(98, 50 + cents)) + '%';
+    // Vertical tuner: sharp (+cents) pushes the needle up, flat (−cents) down.
+    $('tunerNeedle').style.top = Math.max(2, Math.min(98, 50 - cents)) + '%';
   }
   function showTuner(on) { const el = $('tuner'); if (el) el.style.display = on ? 'flex' : 'none'; if (on) updateTuner(null); }
 
