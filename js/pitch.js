@@ -18,9 +18,11 @@
   // reported); a louder ringing string can otherwise push the note you just
   // played below the threshold and miss it.
   const cfg = {
+    mode: 'poly',       // 'poly' = FFT harmonic-sum; 'mono' = autocorrelation
     rmsGate: 0.005,     // input level below which we treat it as silence
-    salienceCut: 0.18,  // a note counts if its salience >= this fraction of the loudest
-    harmonics: 8,       // harmonics summed when scoring each candidate fundamental
+    salienceCut: 0.18,  // (poly) a note counts if its salience >= this fraction of the loudest
+    harmonics: 8,       // (poly) harmonics summed when scoring each candidate fundamental
+    monoClarity: 0.3,   // (mono) minimum autocorrelation clarity to report a pitch
     minFreq: 60,        // a touch below low-E guitar / bass, with margin
     maxFreq: 1600,      // above the top of a guitar's range
   };
@@ -71,13 +73,63 @@
     return a + (c - a) * (b - i);
   }
 
+  // Dispatch to the selected detector. Both return the same shape
+  // { freq, midi, clarity, rms, pcs, candidates } so the rest of the app doesn't
+  // care which one ran.
+  function detect() {
+    if (!running) return null;
+    return cfg.mode === 'mono' ? detectMono() : detectPoly();
+  }
+
+  // Improved mono pitch detection: time-domain autocorrelation over the
+  // plausible pitch-lag window, picking the first strong peak (the fundamental)
+  // so it doesn't drop an octave-and-a-fifth. One pitch only — overtones and
+  // ringing strings can mislead it, but it's lighter and very precise.
+  function detectMono() {
+    const N = 2048; // a 2048-sample sub-window is plenty for autocorrelation
+    analyser.getFloatTimeDomainData(tbuf);
+    let c0 = 0;
+    for (let i = 0; i < N; i++) c0 += tbuf[i] * tbuf[i];
+    const rms = Math.sqrt(c0 / N);
+    if (rms < cfg.rmsGate || c0 <= 0) return { freq: 0, midi: null, clarity: 0, rms, pcs: [], candidates: [] };
+
+    const sr = ctx.sampleRate;
+    const minLag = Math.max(2, Math.floor(sr / cfg.maxFreq));
+    const maxLag = Math.min(N - 2, Math.ceil(sr / cfg.minFreq));
+    const c = new Float32Array(maxLag + 2);
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      let sum = 0;
+      for (let i = 0; i + lag < N; i++) sum += tbuf[i] * tbuf[i + lag];
+      c[lag] = sum;
+    }
+    let maxval = -Infinity, maxpos = -1;
+    for (let lag = minLag; lag <= maxLag; lag++) if (c[lag] > maxval) { maxval = c[lag]; maxpos = lag; }
+    if (maxpos < 0 || maxval <= 0) return { freq: 0, midi: null, clarity: 0, rms, pcs: [], candidates: [] };
+
+    const thresh = maxval * 0.85;
+    let pos = maxpos;
+    for (let lag = minLag + 1; lag < maxLag; lag++) {
+      if (c[lag] >= thresh && c[lag] > c[lag - 1] && c[lag] >= c[lag + 1]) { pos = lag; break; }
+    }
+    let T0 = pos;
+    const x1 = c[pos - 1] || 0, x2 = c[pos], x3 = c[pos + 1] || 0;
+    const a = (x1 + x3 - 2 * x2) / 2, b = (x3 - x1) / 2;
+    if (a) T0 = pos - b / (2 * a);
+
+    const clarity = maxval / c0;
+    const freq = sr / T0;
+    if (freq < cfg.minFreq || freq > cfg.maxFreq || clarity < cfg.monoClarity) return { freq, midi: null, clarity, rms, pcs: [], candidates: [] };
+    const midi = freqToMidi(freq);
+    const pc = ((midi % 12) + 12) % 12;
+    return { freq, midi, clarity, rms, pcs: [pc], candidates: [{ midi, pc, rel: 1, on: true }] };
+  }
+
   // Returns { freq, midi, clarity, rms, pcs, candidates } or null. `pcs` is the
   // set of sounding pitch classes (0..11) at/above the cut; `candidates` lists
   // every local-max note (midi, pc, rel = salience/max, on = at/above cut) for
   // the debug panel; `midi`/`freq` describe the dominant note for the tuner.
   // midi is null and pcs is empty when nothing is playing.
-  function detect() {
-    if (!running) return null;
+  function detectPoly() {
     analyser.getFloatTimeDomainData(tbuf);
     let energy = 0;
     for (let i = 0; i < FFT_SIZE; i++) energy += tbuf[i] * tbuf[i];
