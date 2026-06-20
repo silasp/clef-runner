@@ -281,6 +281,32 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
 .tuner.intune .t-needle { background: var(--good); }
 .tuner .t-cents { font-size: 12px; color: var(--muted); min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
 
+/* ---- mic detection debug / tuning panel (pause screen) ---- */
+.mic-debug { text-align: left; margin: 12px 0 4px; max-width: 420px; max-height: 56vh; overflow-y: auto; }
+.mic-debug .md-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+.md-row { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
+.md-row .md-k { width: 52px; font-size: 12px; color: var(--muted); }
+.md-row .md-v { font-weight: 700; font-variant-numeric: tabular-nums; }
+.md-bar { flex: 1; height: 8px; background: var(--bg-2); border-radius: 4px; overflow: hidden; }
+.md-bar > span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--good), var(--accent)); transition: width .05s linear; }
+.md-match { margin-left: auto; font-size: 12px; font-weight: 700; }
+.md-match.ok { color: var(--good); }
+.md-match.no { color: var(--muted); }
+.md-notes { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; min-height: 26px; }
+.md-notes .md-empty { font-size: 12px; color: var(--muted); }
+.md-chip { position: relative; overflow: hidden; min-width: 40px; padding: 4px 8px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--edge); font-size: 12px; color: var(--muted); }
+.md-chip b { position: relative; z-index: 1; font-variant-numeric: tabular-nums; }
+.md-chip i { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--muted); }
+.md-chip.on { color: var(--text); border-color: var(--accent); }
+.md-chip.on i { background: var(--accent); }
+.md-chip.tgt { box-shadow: 0 0 0 2px rgba(47,208,122,.55); }
+.mic-sliders { display: flex; flex-direction: column; gap: 9px; margin-top: 6px; }
+.tp-row { display: block; }
+.tp-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.tp-head .tp-val { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.tp-row input[type=range] { width: 100%; accent-color: var(--accent); }
+.md-reset { margin-top: 12px; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--edge); background: var(--panel-2); color: var(--text); font-size: 13px; font-weight: 600; }
+
 /* ---- stats panel (replaces the old leaderboard) ---- */
 .stats-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 .stat-card {

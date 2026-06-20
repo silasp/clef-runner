@@ -18,6 +18,10 @@
     settings: { mode: 'licks', genre: 'all', difficulty: 'medium', speed: 'steady', clef: 'treble', showHints: true, sound: true, livesMode: false, randomKey: false, octaveShift: true, timeSig: '4/4', mic: false, metronome: false, scaleTypes: ['major'], libraryIds: [] },
   };
   const micState = { lastFireTime: 0, silentFrames: 0, armed: true, lastRms: 0 };
+  // Matching-side params (the detector's own params live in App.Pitch.cfg). Both
+  // are fine-tuned live from the paused debug panel and persisted.
+  const micCfg = { onsetRatio: 1.6, refractoryMs: 140 };
+  const MIC_TUNE_DEFAULTS = { rmsGate: 0.005, salienceCut: 0.18, harmonics: 8, onsetRatio: 1.6, refractoryMs: 140 };
   let game = new App.Game();
   let instrument = null;
   let staffCtx, instCtx, staffRect, instRect;
@@ -138,8 +142,10 @@
     if (!App.Pitch || !App.Pitch.isRunning()) return;
     // Keep the tuner live while playing OR paused; only score while playing.
     const playing = game.status === 'playing';
-    if (!playing && game.status !== 'paused') return;
+    const paused = game.status === 'paused';
+    if (!playing && !paused) return;
     const p = App.Pitch.detect();
+    if (paused) updateMicDebug(p); // live readout while the debug panel is open
     if (!p || p.midi == null) {
       micState.silentFrames++;
       micState.lastRms = p ? p.rms : 0;
@@ -148,15 +154,15 @@
     }
     // A sharp jump in level is a fresh pluck — re-arm so a new note registers
     // even if the previous one is still ringing underneath it.
-    const onset = p.rms > (micState.lastRms || 0) * 1.6 + 0.01;
+    const onset = p.rms > (micState.lastRms || 0) * micCfg.onsetRatio + 0.01;
     micState.lastRms = p.rms;
     micState.silentFrames = 0;
     updateTuner(p.freq); // the dominant pitch drives the tuner display
-    if (!playing) return; // paused: tuner only, no note scoring
+    if (!playing) return; // paused: tuner/debug only, no note scoring
     const now = performance.now();
     // Re-arm on a fresh pluck, or after a short refractory so a missed onset
     // never leaves us stuck unable to match the next note.
-    if (onset || now - micState.lastFireTime > 140) micState.armed = true;
+    if (onset || now - micState.lastFireTime > micCfg.refractoryMs) micState.armed = true;
     // Polyphonic match: pass if the target pitch class is among those sounding.
     // Matching is lenient (a miss is never penalised), so leaning sensitive only
     // helps; the armed/refractory pair keeps one pluck from clearing several.
@@ -190,6 +196,96 @@
     $('tunerNeedle').style.top = Math.max(2, Math.min(98, 50 - cents)) + '%';
   }
   function showTuner(on) { const el = $('tuner'); if (el) el.style.display = on ? 'flex' : 'none'; if (on) updateTuner(null); }
+
+  // ---- mic detection debug / tuning (shown on the pause screen) ------------
+  // Sliders fine-tune the detector (App.Pitch.cfg) and the matcher (micCfg).
+  const TUNE_PARAMS = [
+    { id: 'tpCut', label: 'Sensitivity (lower = catches more)', min: 0.04, max: 0.8, step: 0.01, get: () => App.Pitch.cfg.salienceCut, set: (v) => App.Pitch.cfg.salienceCut = v, fmt: (v) => v.toFixed(2) },
+    { id: 'tpRms', label: 'Noise gate (lower = quieter notes)', min: 0.001, max: 0.03, step: 0.001, get: () => App.Pitch.cfg.rmsGate, set: (v) => App.Pitch.cfg.rmsGate = v, fmt: (v) => v.toFixed(3) },
+    { id: 'tpHarm', label: 'Harmonics summed', min: 1, max: 12, step: 1, get: () => App.Pitch.cfg.harmonics, set: (v) => App.Pitch.cfg.harmonics = v, fmt: (v) => String(v | 0) },
+    { id: 'tpRefr', label: 'Refractory ms (gap between hits)', min: 0, max: 500, step: 10, get: () => micCfg.refractoryMs, set: (v) => micCfg.refractoryMs = v, fmt: (v) => String(v | 0) },
+    { id: 'tpOnset', label: 'Onset ratio (re-pluck sensitivity)', min: 1, max: 3, step: 0.1, get: () => micCfg.onsetRatio, set: (v) => micCfg.onsetRatio = v, fmt: (v) => v.toFixed(1) },
+  ];
+  function saveTune() {
+    localStorage.setItem('sr.mictune', JSON.stringify({
+      rmsGate: App.Pitch.cfg.rmsGate, salienceCut: App.Pitch.cfg.salienceCut,
+      harmonics: App.Pitch.cfg.harmonics, onsetRatio: micCfg.onsetRatio, refractoryMs: micCfg.refractoryMs,
+    }));
+  }
+  function loadTune() {
+    if (!App.Pitch) return;
+    try {
+      const t = JSON.parse(localStorage.getItem('sr.mictune'));
+      if (!t) return;
+      if (t.rmsGate != null) App.Pitch.cfg.rmsGate = t.rmsGate;
+      if (t.salienceCut != null) App.Pitch.cfg.salienceCut = t.salienceCut;
+      if (t.harmonics != null) App.Pitch.cfg.harmonics = t.harmonics;
+      if (t.onsetRatio != null) micCfg.onsetRatio = t.onsetRatio;
+      if (t.refractoryMs != null) micCfg.refractoryMs = t.refractoryMs;
+    } catch (e) {}
+  }
+  function buildMicTuneSliders() {
+    const wrap = $('micTuneSliders');
+    if (!wrap || wrap.childElementCount) return; // build once
+    TUNE_PARAMS.forEach((pm) => {
+      const row = el('label', 'tp-row');
+      const head = el('div', 'tp-head');
+      head.appendChild(Object.assign(el('span', 'tp-label'), { textContent: pm.label }));
+      const valEl = Object.assign(el('span', 'tp-val'), { id: pm.id + 'V' });
+      head.appendChild(valEl);
+      const input = Object.assign(document.createElement('input'),
+        { type: 'range', min: pm.min, max: pm.max, step: pm.step, id: pm.id, value: pm.get() });
+      valEl.textContent = pm.fmt(+input.value);
+      input.addEventListener('input', () => { const v = +input.value; pm.set(v); valEl.textContent = pm.fmt(v); saveTune(); });
+      row.appendChild(head); row.appendChild(input);
+      wrap.appendChild(row);
+    });
+  }
+  function syncMicTuneSliders() {
+    TUNE_PARAMS.forEach((pm) => { const i = $(pm.id), v = $(pm.id + 'V'); if (i) { i.value = pm.get(); if (v) v.textContent = pm.fmt(pm.get()); } });
+  }
+  function resetTune() {
+    App.Pitch.cfg.rmsGate = MIC_TUNE_DEFAULTS.rmsGate;
+    App.Pitch.cfg.salienceCut = MIC_TUNE_DEFAULTS.salienceCut;
+    App.Pitch.cfg.harmonics = MIC_TUNE_DEFAULTS.harmonics;
+    micCfg.onsetRatio = MIC_TUNE_DEFAULTS.onsetRatio;
+    micCfg.refractoryMs = MIC_TUNE_DEFAULTS.refractoryMs;
+    syncMicTuneSliders(); saveTune();
+  }
+  function showMicDebug(on) {
+    const box = $('micDebug'); if (!box) return;
+    box.style.display = on ? 'block' : 'none';
+    if (on) buildMicTuneSliders();
+  }
+  function updateMicDebug(p) {
+    const box = $('micDebug'); if (!box || box.style.display === 'none') return;
+    const rms = p ? p.rms : 0;
+    const rmsEl = $('mdRms'); if (rmsEl) rmsEl.style.width = Math.max(0, Math.min(100, (rms / 0.05) * 100)) + '%';
+    const heard = $('mdHeard');
+    if (heard) {
+      if (p && p.midi != null) {
+        const { midi, cents } = App.Theory.centsOff(p.freq);
+        heard.textContent = NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1) + ' ' + (cents > 0 ? '+' : '') + cents + '¢';
+      } else heard.textContent = '—';
+    }
+    const a = game.active;
+    const tpc = a ? (((a.note.midi % 12) + 12) % 12) : -1;
+    const tgt = $('mdTarget'); if (tgt) tgt.textContent = a ? (NOTE_NAMES[tpc] + (Math.floor(a.note.midi / 12) - 1)) : '—';
+    const matched = !!(a && p && p.pcs && p.pcs.indexOf(tpc) !== -1);
+    const mEl = $('mdMatch'); if (mEl) { mEl.textContent = a ? (matched ? '✓ would pass' : 'no match') : ''; mEl.className = 'md-match ' + (matched ? 'ok' : 'no'); }
+    const notes = $('mdNotes');
+    if (notes) {
+      notes.innerHTML = '';
+      ((p && p.candidates) || []).forEach((c) => {
+        const chip = el('span', 'md-chip' + (c.on ? ' on' : '') + (c.pc === tpc ? ' tgt' : ''));
+        chip.appendChild(Object.assign(el('b'), { textContent: NOTE_NAMES[c.pc] + (Math.floor(c.midi / 12) - 1) }));
+        const bar = el('i'); bar.style.width = Math.round(c.rel * 100) + '%';
+        chip.appendChild(bar);
+        notes.appendChild(chip);
+      });
+      if (!notes.childElementCount) notes.appendChild(Object.assign(el('span', 'md-empty'), { textContent: 'play a note…' }));
+    }
+  }
 
   // ---- feedback -----------------------------------------------------------
   function flashScreen(kind) {
@@ -290,9 +386,10 @@
   function pauseGame() {
     if (game.status !== 'playing') return;
     game.pause();
+    showMicDebug(state.settings.mic); // mic tuning/debug lives on the pause screen
     $('pauseOverlay').classList.add('active');
   }
-  function resumeGame() { $('pauseOverlay').classList.remove('active'); game.resume(); }
+  function resumeGame() { showMicDebug(false); $('pauseOverlay').classList.remove('active'); game.resume(); }
 
   // Fold a finished round into the local stats totals (once per game). Awards are
   // handled live during play / on first load, not here, so the menu stays calm.
@@ -758,6 +855,7 @@
     $('menuBtn').onclick = quitToMenu;
     $('resumeBtn').onclick = resumeGame;
     $('quitBtn').onclick = quitToMenu;
+    const micReset = $('micTuneReset'); if (micReset) micReset.onclick = resetTune;
     $('againBtn').onclick = startGame;
     $('overMenuBtn').onclick = quitToMenu;
     const ob = $('ovOpenBoxes'); if (ob) ob.onclick = openBoxes;
@@ -839,6 +937,7 @@
 
   function boot() {
     loadSettings();
+    loadTune(); // restore saved mic-detection tuning
     App.Audio.setEnabled(state.settings.sound);
     bind();
     initAuthAndSW();
