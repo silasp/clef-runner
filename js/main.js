@@ -12,16 +12,19 @@
 
   const $ = (id) => document.getElementById(id);
   const DEFS = App.Instruments.DEFS;
+  // Bump this to the PR number on every change so the paused debug panel shows
+  // which code version is actually running (avoids testing a cached build).
+  const BUILD_PR = 19;
 
   const state = {
     inst: 'piano',
     settings: { mode: 'licks', genre: 'all', difficulty: 'medium', speed: 'steady', clef: 'treble', showHints: true, sound: true, livesMode: false, randomKey: false, octaveShift: true, timeSig: '4/4', mic: false, metronome: false, scaleTypes: ['major'], libraryIds: [] },
   };
-  const micState = { lastFireTime: 0, silentFrames: 0, armed: true, lastRms: 0 };
+  const micState = { lastFireTime: 0, silentFrames: 0, armed: true, env: 0, lastMidi: null };
   // Matching-side params (the detector's own params live in App.Pitch.cfg). Both
   // are fine-tuned live from the paused debug panel and persisted.
-  const micCfg = { onsetRatio: 1.6, refractoryMs: 140 };
-  const MIC_TUNE_DEFAULTS = { mode: 'poly', rmsGate: 0.005, salienceCut: 0.18, harmonics: 8, onsetRatio: 1.6, refractoryMs: 140 };
+  const micCfg = { onsetRatio: 1.4, refractoryMs: 120 };
+  const MIC_TUNE_DEFAULTS = { mode: 'poly', rmsGate: 0.005, salienceCut: 0.18, harmonics: 8, onsetRatio: 1.4, refractoryMs: 120 };
   let game = new App.Game();
   let instrument = null;
   let staffCtx, instCtx, staffRect, instRect;
@@ -148,25 +151,32 @@
     if (paused) updateMicDebug(p); // live readout while the debug panel is open
     if (!p || p.midi == null) {
       micState.silentFrames++;
-      micState.lastRms = p ? p.rms : 0;
-      if (micState.silentFrames > 2) { micState.armed = true; updateTuner(null); }
+      micState.env = (micState.env || 0) * 0.7; // let the envelope fall during silence
+      if (micState.silentFrames > 2) { micState.armed = true; micState.lastMidi = null; updateTuner(null); }
       return;
     }
-    // A sharp jump in level is a fresh pluck — re-arm so a new note registers
-    // even if the previous one is still ringing underneath it.
-    const onset = p.rms > (micState.lastRms || 0) * micCfg.onsetRatio + 0.01;
-    micState.lastRms = p.rms;
     micState.silentFrames = 0;
     updateTuner(p.freq); // the dominant pitch drives the tuner display
+    // Note-change detection. An envelope follower (instant attack, slow release)
+    // tracks the note's level; a fresh pluck makes the level jump back ABOVE the
+    // released envelope (an attack), while a single note ringing/decaying never
+    // does. We also treat a change of detected pitch as a new note. Either one
+    // re-arms — so one pluck clears exactly one note instead of every note that
+    // drifts by while it rings.
+    const prevEnv = micState.env || 0;
+    micState.env = p.rms > prevEnv ? p.rms : prevEnv * 0.88 + p.rms * 0.12;
+    const attack = p.rms > prevEnv * micCfg.onsetRatio + 0.004 && p.rms > App.Pitch.cfg.rmsGate * 1.4;
+    // a change of pitch class is a new note too (helps legato / bowed notes with
+    // no sharp attack); compared by class so an octave flicker doesn't re-arm.
+    const pc = (m) => (((m % 12) + 12) % 12);
+    const pitchChanged = micState.lastMidi != null && pc(p.midi) !== pc(micState.lastMidi);
+    if (attack || pitchChanged) micState.armed = true;
     if (!playing) return; // paused: tuner/debug only, no note scoring
     const now = performance.now();
-    // Re-arm on a fresh pluck, or after a short refractory so a missed onset
-    // never leaves us stuck unable to match the next note.
-    if (onset || now - micState.lastFireTime > micCfg.refractoryMs) micState.armed = true;
+    // Match while armed; the refractory is now only a minimum gap between hits
+    // (debounce), never a re-arm — re-arming happens solely on a new attack.
     // Polyphonic match: pass if the target pitch class is among those sounding.
-    // Matching is lenient (a miss is never penalised), so leaning sensitive only
-    // helps; the armed/refractory pair keeps one pluck from clearing several.
-    if (micState.armed) {
+    if (micState.armed && now - micState.lastFireTime > micCfg.refractoryMs) {
       const res = game.handleMic(p.pcs);
       if (res && res.result === 'good') {
         instrument.cellsForMidi(res.note.midi).forEach((c) => instrument.flashCell(c.id, 'good'));
@@ -176,6 +186,7 @@
         updateHud();
         micState.armed = false;
         micState.lastFireTime = now;
+        micState.lastMidi = p.midi; // remember the cleared pitch for change-detection
       }
     }
   }
@@ -204,10 +215,10 @@
     { id: 'tpRms', label: 'Noise gate (lower = quieter notes)', min: 0.001, max: 0.03, step: 0.001, get: () => App.Pitch.cfg.rmsGate, set: (v) => App.Pitch.cfg.rmsGate = v, fmt: (v) => v.toFixed(3) },
     { id: 'tpHarm', label: 'Harmonics summed', min: 1, max: 12, step: 1, get: () => App.Pitch.cfg.harmonics, set: (v) => App.Pitch.cfg.harmonics = v, fmt: (v) => String(v | 0) },
     { id: 'tpRefr', label: 'Refractory ms (gap between hits)', min: 0, max: 500, step: 10, get: () => micCfg.refractoryMs, set: (v) => micCfg.refractoryMs = v, fmt: (v) => String(v | 0) },
-    { id: 'tpOnset', label: 'Onset ratio (re-pluck sensitivity)', min: 1, max: 3, step: 0.1, get: () => micCfg.onsetRatio, set: (v) => micCfg.onsetRatio = v, fmt: (v) => v.toFixed(1) },
+    { id: 'tpOnset', label: 'Onset ratio (lower = easier re-pluck)', min: 1.1, max: 3, step: 0.05, get: () => micCfg.onsetRatio, set: (v) => micCfg.onsetRatio = v, fmt: (v) => v.toFixed(2) },
   ];
   function saveTune() {
-    localStorage.setItem('sr.mictune', JSON.stringify({
+    localStorage.setItem('sr.mictune.v2', JSON.stringify({
       mode: App.Pitch.cfg.mode, rmsGate: App.Pitch.cfg.rmsGate, salienceCut: App.Pitch.cfg.salienceCut,
       harmonics: App.Pitch.cfg.harmonics, onsetRatio: micCfg.onsetRatio, refractoryMs: micCfg.refractoryMs,
     }));
@@ -215,13 +226,20 @@
   function loadTune() {
     if (!App.Pitch) return;
     try {
-      const t = JSON.parse(localStorage.getItem('sr.mictune'));
+      let t = JSON.parse(localStorage.getItem('sr.mictune.v2'));
+      if (!t) {
+        // migrate from v1: keep the detector prefs but drop the old onset/
+        // refractory values — those params changed meaning (envelope-based
+        // onset, refractory no longer re-arms), so reset them to new defaults.
+        const old = JSON.parse(localStorage.getItem('sr.mictune'));
+        if (old) t = { mode: old.mode, rmsGate: old.rmsGate, salienceCut: old.salienceCut, harmonics: old.harmonics };
+      }
       if (!t) return;
       if (t.mode === 'mono' || t.mode === 'poly') App.Pitch.cfg.mode = t.mode;
       if (t.rmsGate != null) App.Pitch.cfg.rmsGate = t.rmsGate;
       if (t.salienceCut != null) App.Pitch.cfg.salienceCut = t.salienceCut;
       if (t.harmonics != null) App.Pitch.cfg.harmonics = t.harmonics;
-      if (t.onsetRatio != null) micCfg.onsetRatio = t.onsetRatio;
+      if (t.onsetRatio != null) micCfg.onsetRatio = Math.max(1.1, t.onsetRatio);
       if (t.refractoryMs != null) micCfg.refractoryMs = t.refractoryMs;
     } catch (e) {}
   }
@@ -270,7 +288,10 @@
   function showMicDebug(on) {
     const box = $('micDebug'); if (!box) return;
     box.style.display = on ? 'block' : 'none';
-    if (on) { buildMicTuneSliders(); wireMicMode(); syncMicMode(); }
+    if (on) {
+      const b = $('mdBuild'); if (b) b.textContent = 'PR #' + BUILD_PR;
+      buildMicTuneSliders(); wireMicMode(); syncMicMode();
+    }
   }
   function updateMicDebug(p) {
     const box = $('micDebug'); if (!box || box.style.display === 'none') return;
