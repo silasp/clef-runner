@@ -44,10 +44,12 @@
     ctx.font = `${gap * 2.4}px "Bravura","Noto Music",serif`;
     for (let i = 0; i < n; i++) ctx.fillText(fifths > 0 ? '♯' : '♭', x0 + i * dx, yFor(T.stepOf(arr[i][0], arr[i][1])));
   }
-  // glyph for a note's accidental relative to a key signature (null = none shown)
-  function accidentalGlyph(accidental, keyAcc) {
-    if (accidental === keyAcc) return null;        // covered by key signature
-    if (accidental === 0) return '♮';              // natural cancels a key accidental
+  // glyph for a note's accidental relative to the accidental currently in force
+  // at its staff position (the key signature at the start of a bar, or whatever a
+  // prior note in the bar set). null = nothing drawn.
+  function accidentalGlyph(accidental, active) {
+    if (accidental === active) return null;        // already in force, not redrawn
+    if (accidental === 0) return '♮';              // cancels an active sharp/flat
     return accidental === 1 ? '♯' : '♭';
   }
   // stationary vertical beat/bar ruler (lines fixed; notes scroll across them)
@@ -230,6 +232,25 @@
       const m = /(\d+)\s*\/\s*(\d+)/.exec(this.settings.timeSig || '4/4');
       if (!m) return 4;
       return (+m[1]) * 4 / (+m[2]); // bar length in quarter-note beats
+    }
+    // Decide the accidental glyph drawn for every visible note, following
+    // standard notation: an accidental persists to the end of its bar at that
+    // staff position. So a return to the key-signature pitch after an altered
+    // same-position note must restate it (e.g. F♮ then F♯ in a sharp key still
+    // needs the ♯), and a repeated accidental within the bar is not redrawn.
+    // Memory is keyed by staff line/space (letter+octave) and resets each bar.
+    _resolveAccidentals() {
+      const barBeats = this._barBeats() || 4;
+      let curBar = null, mem = {};
+      for (const n of this.notes) {
+        const bar = Math.floor((n.beat + 1e-6) / barBeats);
+        if (bar !== curBar) { curBar = bar; mem = {}; }
+        const step = n.note.step;
+        const keyAcc = T.keySig(n.fifths || 0).accMap[n.note.letter] || 0;
+        const active = step in mem ? mem[step] : keyAcc;
+        n._accGlyph = accidentalGlyph(n.note.accidental, active);
+        mem[step] = n.note.accidental;
+      }
     }
     _nextDur() {
       if (!this._rhythmBuf.length) this._rhythmBuf = RHYTHM_PATTERNS[(Math.random() * RHYTHM_PATTERNS.length) | 0].slice();
@@ -662,6 +683,7 @@
       drawKeySig(ctx, this._sigFifths(), ks, rect.x + ins + gap * 3.4, gap * 0.95, yFor, gap, STAFF.clef);
 
       // notes
+      this._resolveAccidentals();
       const noteRx = gap * 0.62, noteRy = gap * 0.5;
       const items = [];
       this.notes.forEach((n, i) => {
@@ -682,9 +704,8 @@
         if (step > top) for (let L = top + 2; L <= step; L += 2) drawLedger(L);
         if (step < bot) for (let L = bot - 2; L >= step; L -= 2) drawLedger(L);
 
-        // accidental — only when it differs from the note's key signature
-        const keyAcc = T.keySig(n.fifths || 0).accMap[n.note.letter] || 0;
-        const glyph = accidentalGlyph(n.note.accidental, keyAcc);
+        // accidental — only when it differs from what's already in force
+        const glyph = n._accGlyph;
         if (glyph) {
           ctx.fillStyle = color;
           ctx.font = `${gap * 1.9}px serif`;
@@ -746,6 +767,7 @@
       drawKeySig(ctx, sf, KS_TREBLE, rect.x + ins + gap * 3.8, gap * 0.95, yFor, gap, STAFF.clef);
       drawKeySig(ctx, sf, KS_BASS, rect.x + ins + gap * 3.8, gap * 0.95, yFor, gap, STAFF.clef);
 
+      this._resolveAccidentals();
       const noteRx = gap * 0.62, noteRy = gap * 0.5;
       const items = [];
       this.notes.forEach((n, i) => {
@@ -764,8 +786,7 @@
         if (step > topL) for (let L = topL + 2; L <= step; L += 2) drawLedger(L);
         if (step < botL) for (let L = botL - 2; L >= step; L -= 2) drawLedger(L);
 
-        const keyAcc = T.keySig(n.fifths || 0).accMap[n.note.letter] || 0;
-        const glyph = accidentalGlyph(n.note.accidental, keyAcc);
+        const glyph = n._accGlyph;
         if (glyph) {
           ctx.fillStyle = color; ctx.font = `${gap * 1.9}px serif`;
           ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
