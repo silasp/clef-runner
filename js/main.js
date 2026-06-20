@@ -21,7 +21,7 @@
   // Matching-side params (the detector's own params live in App.Pitch.cfg). Both
   // are fine-tuned live from the paused debug panel and persisted.
   const micCfg = { onsetRatio: 1.6, refractoryMs: 140 };
-  const MIC_TUNE_DEFAULTS = { rmsGate: 0.005, salienceCut: 0.18, harmonics: 8, onsetRatio: 1.6, refractoryMs: 140 };
+  const MIC_TUNE_DEFAULTS = { mode: 'poly', rmsGate: 0.005, salienceCut: 0.18, harmonics: 8, onsetRatio: 1.6, refractoryMs: 140 };
   let game = new App.Game();
   let instrument = null;
   let staffCtx, instCtx, staffRect, instRect;
@@ -208,7 +208,7 @@
   ];
   function saveTune() {
     localStorage.setItem('sr.mictune', JSON.stringify({
-      rmsGate: App.Pitch.cfg.rmsGate, salienceCut: App.Pitch.cfg.salienceCut,
+      mode: App.Pitch.cfg.mode, rmsGate: App.Pitch.cfg.rmsGate, salienceCut: App.Pitch.cfg.salienceCut,
       harmonics: App.Pitch.cfg.harmonics, onsetRatio: micCfg.onsetRatio, refractoryMs: micCfg.refractoryMs,
     }));
   }
@@ -217,6 +217,7 @@
     try {
       const t = JSON.parse(localStorage.getItem('sr.mictune'));
       if (!t) return;
+      if (t.mode === 'mono' || t.mode === 'poly') App.Pitch.cfg.mode = t.mode;
       if (t.rmsGate != null) App.Pitch.cfg.rmsGate = t.rmsGate;
       if (t.salienceCut != null) App.Pitch.cfg.salienceCut = t.salienceCut;
       if (t.harmonics != null) App.Pitch.cfg.harmonics = t.harmonics;
@@ -245,17 +246,31 @@
     TUNE_PARAMS.forEach((pm) => { const i = $(pm.id), v = $(pm.id + 'V'); if (i) { i.value = pm.get(); if (v) v.textContent = pm.fmt(pm.get()); } });
   }
   function resetTune() {
+    App.Pitch.cfg.mode = MIC_TUNE_DEFAULTS.mode;
     App.Pitch.cfg.rmsGate = MIC_TUNE_DEFAULTS.rmsGate;
     App.Pitch.cfg.salienceCut = MIC_TUNE_DEFAULTS.salienceCut;
     App.Pitch.cfg.harmonics = MIC_TUNE_DEFAULTS.harmonics;
     micCfg.onsetRatio = MIC_TUNE_DEFAULTS.onsetRatio;
     micCfg.refractoryMs = MIC_TUNE_DEFAULTS.refractoryMs;
-    syncMicTuneSliders(); saveTune();
+    syncMicTuneSliders(); syncMicMode(); saveTune();
+  }
+  function wireMicMode() {
+    const seg = $('mdModeSeg'); if (!seg || seg._wired) return; seg._wired = true;
+    seg.querySelectorAll('button').forEach((b) => {
+      b.onclick = () => { App.Pitch.cfg.mode = b.dataset.v; saveTune(); syncMicMode(); };
+    });
+  }
+  function syncMicMode() {
+    const seg = $('mdModeSeg'); if (!seg) return;
+    const mono = App.Pitch.cfg.mode === 'mono';
+    seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === App.Pitch.cfg.mode));
+    // the salience-cut and harmonics sliders are polyphonic-only — dim in mono
+    ['tpCut', 'tpHarm'].forEach((id) => { const i = $(id); const row = i && i.closest('.tp-row'); if (row) row.classList.toggle('disabled', mono); });
   }
   function showMicDebug(on) {
     const box = $('micDebug'); if (!box) return;
     box.style.display = on ? 'block' : 'none';
-    if (on) buildMicTuneSliders();
+    if (on) { buildMicTuneSliders(); wireMicMode(); syncMicMode(); }
   }
   function updateMicDebug(p) {
     const box = $('micDebug'); if (!box || box.style.display === 'none') return;
@@ -468,10 +483,65 @@
   }
 
   // ---- menu rendering -----------------------------------------------------
+  // Instruments are grouped into family "stacks": one tap opens a family, a
+  // second tap picks an instrument inside it.
+  const INSTRUMENT_FAMILIES = [
+    { name: 'Keyboard', members: ['piano'] },
+    { name: 'Plucked strings', members: ['guitar', 'bassGuitar', 'ukulele', 'banjo', 'mandolin'] },
+    { name: 'Bowed strings', members: ['violin', 'viola', 'cello', 'doubleBass'] },
+    { name: 'Voice', members: ['soprano', 'alto', 'tenor', 'bass'] },
+  ];
+  const familyOf = (inst) => INSTRUMENT_FAMILIES.findIndex((f) => f.members.indexOf(inst) !== -1);
+  let openFamily = null; // index of the currently expanded stack
+
+  function selectInstrument(key) {
+    state.inst = key;
+    openFamily = familyOf(key);
+    saveSettings();
+    renderInstrumentCards();
+  }
   function renderInstrumentCards() {
-    document.querySelectorAll('#instrumentGrid .inst-card').forEach((b) => {
-      b.classList.toggle('selected', b.dataset.inst === state.inst);
-    });
+    const grid = $('instrumentGrid');
+    if (grid) {
+      if (openFamily == null) openFamily = familyOf(state.inst); // open the selected family
+      grid.innerHTML = '';
+      INSTRUMENT_FAMILIES.forEach((fam, fi) => {
+        const single = fam.members.length === 1;
+        const selKey = fam.members.indexOf(state.inst) !== -1 ? state.inst : null;
+        const open = openFamily === fi;
+        const stack = el('div', 'inst-stack' + (open ? ' open' : '') + (selKey ? ' selected' : ''));
+
+        const head = el('button', 'inst-stack-head');
+        head.appendChild(Object.assign(el('span', 'emoji'), { textContent: DEFS[selKey || fam.members[0]].icon }));
+        const txt = el('span', 'st-text');
+        txt.appendChild(Object.assign(el('span', 'label'), { textContent: fam.name }));
+        txt.appendChild(Object.assign(el('span', 'sub'), {
+          textContent: selKey ? DEFS[selKey].name : (single ? '' : fam.members.length + ' instruments'),
+        }));
+        head.appendChild(txt);
+        if (!single) head.appendChild(Object.assign(el('span', 'chev'), { textContent: open ? '▾' : '▸' }));
+        head.onclick = () => {
+          if (single) { selectInstrument(fam.members[0]); return; }
+          openFamily = open ? null : fi;
+          renderInstrumentCards();
+        };
+        stack.appendChild(head);
+
+        if (!single) {
+          const body = el('div', 'inst-stack-body');
+          fam.members.forEach((key) => {
+            const d = DEFS[key];
+            const card = el('button', 'inst-card' + (key === state.inst ? ' selected' : ''));
+            card.appendChild(Object.assign(el('span', 'emoji'), { textContent: d.icon }));
+            card.appendChild(Object.assign(el('span', 'label'), { textContent: d.name }));
+            card.onclick = () => selectInstrument(key);
+            body.appendChild(card);
+          });
+          stack.appendChild(body);
+        }
+        grid.appendChild(stack);
+      });
+    }
     $('clefSetting').style.display = state.inst === 'piano' ? '' : 'none';
   }
 
@@ -813,9 +883,8 @@
 
   // ---- event bindings -----------------------------------------------------
   function bind() {
-    document.querySelectorAll('#instrumentGrid .inst-card').forEach((b) => {
-      b.onclick = () => { state.inst = b.dataset.inst; saveSettings(); renderInstrumentCards(); };
-    });
+    // instrument family stacks are rendered (with their own click handlers) in
+    // renderInstrumentCards()
     bindSeg('segMode', (v) => { state.settings.mode = v; updateModeVisibility(); });
     const libSearch = $('librarySearch');
     if (libSearch) libSearch.addEventListener('input', () => renderLibraryList(libSearch.value));
