@@ -12,6 +12,9 @@
 
   const $ = (id) => document.getElementById(id);
   const DEFS = App.Instruments.DEFS;
+  // Bump this to the PR number on every change so the paused debug panel shows
+  // which code version is actually running (avoids testing a cached build).
+  const BUILD_PR = 19;
 
   const state = {
     inst: 'piano',
@@ -285,7 +288,10 @@
   function showMicDebug(on) {
     const box = $('micDebug'); if (!box) return;
     box.style.display = on ? 'block' : 'none';
-    if (on) { buildMicTuneSliders(); wireMicMode(); syncMicMode(); }
+    if (on) {
+      const b = $('mdBuild'); if (b) b.textContent = 'PR #' + BUILD_PR;
+      buildMicTuneSliders(); wireMicMode(); syncMicMode();
+    }
   }
   function updateMicDebug(p) {
     const box = $('micDebug'); if (!box || box.style.display === 'none') return;
