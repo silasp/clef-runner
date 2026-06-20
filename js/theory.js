@@ -62,6 +62,7 @@
   const CLEFS = {
     treble: { glyph: '𝄞', middleStep: stepOf('B', 4) }, // 𝄞 G-clef, middle line B4
     bass: { glyph: '𝄢', middleStep: stepOf('D', 3) },   // 𝄢 F-clef, middle line D3
+    alto: { glyph: '𝄡', middleStep: stepOf('C', 4) },   // 𝄡 C-clef, middle line C4 (viola)
   };
 
   // Parse scientific pitch like "C4", "F#5", "Bb3" into a note descriptor.

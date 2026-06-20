@@ -55,7 +55,7 @@
     violin: { kind: 'fretboard', name: 'Violin', icon: '🎻', clef: 'treble',
       fretted: false, frets: 12,
       strings: [55, 62, 69, 76], stringNames: ['G', 'D', 'A', 'E'] }, // G3 D4 A4 E5
-    viola: { kind: 'fretboard', name: 'Viola', icon: '🎻', clef: 'treble',
+    viola: { kind: 'fretboard', name: 'Viola', icon: '🎻', clef: 'alto',
       fretted: false, frets: 12,
       strings: [48, 55, 62, 69], stringNames: ['C', 'G', 'D', 'A'] }, // C3 G3 D4 A4
     cello: { kind: 'fretboard', name: 'Cello', icon: '🎻', clef: 'bass',
