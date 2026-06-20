@@ -561,8 +561,11 @@
     // the play line stays put even as the key changes between phrases).
     _clefW(rect) {
       const gap = Math.max(9, Math.min(20, rect.h / 11));
-      return Math.min(rect.w * 0.36, gap * 3.2 + 4 * gap * 0.95 + 8);
+      return this._clefInset() + Math.min(rect.w * 0.36, gap * 3.2 + 4 * gap * 0.95 + 8);
     }
+    // Extra left inset so the clef + key signature sit to the RIGHT of the mic
+    // tuner (a vertical strip pinned to the left edge in play-along mode).
+    _clefInset() { return (this.settings && this.settings.mic) ? 66 : 0; }
     _sigFifths() { return this.active && this.active.fifths != null ? this.active.fifths : (this.key ? this.key.fifths : 0); }
 
     // midi: returns {result:'good'|'bad', note, expected?, multiplier?}
@@ -648,14 +651,15 @@
       });
 
       // clef glyph (decorative; app works even if font lacks it)
+      const ins = this._clefInset(); // sit clear of the mic tuner on the left
       ctx.fillStyle = STAFF.clef;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = `${gap * 5.2}px "Bravura","Noto Music",serif`;
-      ctx.fillText(this.clef.glyph, rect.x + gap * 1.7, middleY + (this.clef === T.CLEFS.treble ? gap * 0.4 : -gap * 0.2));
+      ctx.fillText(this.clef.glyph, rect.x + ins + gap * 1.7, middleY + (this.clef === T.CLEFS.treble ? gap * 0.4 : -gap * 0.2));
 
       // key signature
       const ks = this.clef === T.CLEFS.bass ? KS_BASS : KS_TREBLE;
-      drawKeySig(ctx, this._sigFifths(), ks, rect.x + gap * 3.4, gap * 0.95, yFor, gap, STAFF.clef);
+      drawKeySig(ctx, this._sigFifths(), ks, rect.x + ins + gap * 3.4, gap * 0.95, yFor, gap, STAFF.clef);
 
       // notes
       const noteRx = gap * 0.62, noteRy = gap * 0.5;
@@ -729,17 +733,18 @@
         ctx.beginPath(); ctx.moveTo(rect.x, y); ctx.lineTo(rect.x + rect.w, y); ctx.stroke();
       });
       // brace joining the staves
+      const ins = this._clefInset(); // sit clear of the mic tuner on the left
       ctx.strokeStyle = STAFF.clef; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(rect.x + 2, yFor(38)); ctx.lineTo(rect.x + 2, yFor(18)); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(rect.x + ins + 2, yFor(38)); ctx.lineTo(rect.x + ins + 2, yFor(18)); ctx.stroke();
 
       ctx.fillStyle = STAFF.clef; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = `${gap * 4.4}px "Bravura","Noto Music",serif`;
-      ctx.fillText(T.CLEFS.treble.glyph, rect.x + gap * 2.0, yFor(34) + gap * 0.4);
-      ctx.fillText(T.CLEFS.bass.glyph, rect.x + gap * 2.0, yFor(22) - gap * 0.2);
+      ctx.fillText(T.CLEFS.treble.glyph, rect.x + ins + gap * 2.0, yFor(34) + gap * 0.4);
+      ctx.fillText(T.CLEFS.bass.glyph, rect.x + ins + gap * 2.0, yFor(22) - gap * 0.2);
       // key signature on both staves
       const sf = this._sigFifths();
-      drawKeySig(ctx, sf, KS_TREBLE, rect.x + gap * 3.8, gap * 0.95, yFor, gap, STAFF.clef);
-      drawKeySig(ctx, sf, KS_BASS, rect.x + gap * 3.8, gap * 0.95, yFor, gap, STAFF.clef);
+      drawKeySig(ctx, sf, KS_TREBLE, rect.x + ins + gap * 3.8, gap * 0.95, yFor, gap, STAFF.clef);
+      drawKeySig(ctx, sf, KS_BASS, rect.x + ins + gap * 3.8, gap * 0.95, yFor, gap, STAFF.clef);
 
       const noteRx = gap * 0.62, noteRy = gap * 0.5;
       const items = [];

@@ -5,7 +5,9 @@
 (function (App) {
   'use strict';
 
-  const KEY = 'sr.stats';
+  const KEY = 'sr.profiles';     // id -> profile record
+  const KEY_ACTIVE = 'sr.activeId';
+  const KEY_OLD = 'sr.stats';    // pre-multi-profile single blob (migrated once)
   const todayStr = () => new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
   // Milestone tiers. Streak is in days; time tiers in minutes.
@@ -53,9 +55,22 @@
   }
   const cityKey = (p) => (p ? (p.city + '|' + p.country) : '');
 
+  // ---------- profile records ---------------------------------------------
+  // Every local player is one profile record (shape below). Records live in a
+  // map (id -> record) under KEY; KEY_ACTIVE names the one currently in play.
+  // Same-named records are fused on load (most progress wins) so duplicate
+  // profiles spawned across tabs/sessions never split a player's progress, and
+  // every save re-merges with what's on disk first, so a stale tab can never
+  // roll another tab's totals backward — fixing the "progress reset" when the
+  // app is open in several tabs.
+  function newId() { return 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  const normName = (n) => (n == null ? '' : String(n)).trim().toLowerCase();
+
   function blank() {
     const d = todayStr();
     return {
+      id: newId(),
+      savedAt: 0,        // last write time (ms) — tiebreaker for "newest"
       name: '',
       lastScore: 0,
       bestDayStreak: 0, // longest run of consecutive days played, ever
@@ -74,14 +89,15 @@
     };
   }
 
-  function load() {
-    let s;
-    try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+  // Coerce an arbitrary parsed object into a valid record.
+  function normalize(s) {
     const b = blank();
     if (!s || typeof s !== 'object') return b;
     s.today = Object.assign(b.today, s.today || {});
     s.allTime = Object.assign(b.allTime, s.allTime || {});
     s.seen = Object.assign(b.seen, s.seen || {});
+    if (typeof s.id !== 'string' || !s.id) s.id = b.id;
+    if (typeof s.savedAt !== 'number') s.savedAt = 0;
     if (typeof s.name !== 'string') s.name = '';
     if (typeof s.lastScore !== 'number') s.lastScore = 0;
     if (typeof s.bestDayStreak !== 'number') s.bestDayStreak = 0;
@@ -95,7 +111,137 @@
     if (!s.passport || typeof s.passport !== 'object') s.passport = {};
     return s;
   }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(stats)); } catch (e) {} }
+
+  // One comparable "how much progress" number (score dominates, then time/streak).
+  function progressOf(r) {
+    const a = (r && r.allTime) || {};
+    return (a.score || 0) * 1e7 + Math.min(9.9e6, (a.timeMs || 0) / 60 + (r.bestDayStreak || 0) * 1000);
+  }
+
+  // Fuse record b into a. Monotonic totals take the max (never roll back).
+  // Spendable balances (gems/boxes/freezes) keep a's value when opts.keepBalances
+  // is set (a = the live record being saved, so a purchase isn't undone), else
+  // the max (when merging two distinct profiles, keep the richer balance).
+  function mergeRec(a, b, opts) {
+    a = normalize(a); b = normalize(b); opts = opts || {};
+    const out = a;
+    out.name = a.name || b.name;
+    out.bestDayStreak = Math.max(a.bestDayStreak, b.bestDayStreak);
+    out.lastScore = (a.savedAt >= b.savedAt) ? a.lastScore : b.lastScore;
+    if (a.today.date === b.today.date) {
+      out.today = {
+        date: a.today.date,
+        timeMs: Math.max(a.today.timeMs, b.today.timeMs),
+        score: Math.max(a.today.score, b.today.score),
+        bestScore: Math.max(a.today.bestScore, b.today.bestScore),
+        bestStreak: Math.max(a.today.bestStreak, b.today.bestStreak),
+      };
+    } else {
+      out.today = (a.today.date > b.today.date) ? a.today : b.today;
+    }
+    out.allTime = {
+      timeMs: Math.max(a.allTime.timeMs, b.allTime.timeMs),
+      score: Math.max(a.allTime.score, b.allTime.score),
+      bestStreak: Math.max(a.allTime.bestStreak, b.allTime.bestStreak),
+    };
+    out.days = (a.days.length >= b.days.length) ? a.days : b.days;
+    out.awardsEarned = Math.max(a.awardsEarned, b.awardsEarned);
+    out.lastAwardAtMs = Math.max(a.lastAwardAtMs, b.lastAwardAtMs);
+    out.boxesOpened = Math.max(a.boxesOpened, b.boxesOpened);
+    const keep = opts.keepBalances;
+    out.gems = keep ? a.gems : Math.max(a.gems, b.gems);
+    out.boxes = keep ? a.boxes : Math.max(a.boxes, b.boxes);
+    out.freezes = keep ? a.freezes : Math.max(a.freezes, b.freezes);
+    const pp = Object.assign({}, a.passport);
+    Object.keys(b.passport).forEach((k) => { pp[k] = Math.max(pp[k] || 0, b.passport[k]); });
+    out.passport = pp;
+    const od = out.today.date;
+    out.seen = {
+      streak: Math.max(a.seen.streak || 0, b.seen.streak || 0),
+      timeAll: Math.max(a.seen.timeAll || 0, b.seen.timeAll || 0),
+      timeTodayDate: od,
+      timeToday: Math.max(
+        a.seen.timeTodayDate === od ? (a.seen.timeToday || 0) : 0,
+        b.seen.timeTodayDate === od ? (b.seen.timeToday || 0) : 0
+      ),
+    };
+    out.savedAt = Math.max(a.savedAt, b.savedAt);
+    return out;
+  }
+
+  // Read the profile map; on first run migrate the old single-blob stats.
+  function readMap() {
+    let m = null;
+    try { m = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+    if (!m || typeof m !== 'object' || Array.isArray(m)) {
+      m = {};
+      let old = null;
+      try { old = JSON.parse(localStorage.getItem(KEY_OLD)); } catch (e) {}
+      if (old && typeof old === 'object') { const r = normalize(old); r.savedAt = r.savedAt || Date.now(); m[r.id] = r; }
+    } else {
+      Object.keys(m).forEach((id) => { m[id] = normalize(m[id]); m[id].id = id; });
+    }
+    return m;
+  }
+
+  // Collapse same-named records into one (richest wins, then fuse the rest in).
+  function dedupe(m) {
+    const groups = {};
+    Object.keys(m).forEach((id) => { const k = normName(m[id].name); (groups[k] = groups[k] || []).push(m[id]); });
+    const out = {};
+    Object.keys(groups).forEach((k) => {
+      const recs = groups[k];
+      let canon = recs[0];
+      for (let i = 1; i < recs.length; i++) if (progressOf(recs[i]) > progressOf(canon)) canon = recs[i];
+      let merged = canon;
+      recs.forEach((r) => { if (r !== canon) merged = mergeRec(merged, r); });
+      merged.id = canon.id; merged.name = canon.name;
+      out[canon.id] = merged;
+    });
+    return out;
+  }
+
+  function pickDefault(m) {
+    let best = null;
+    Object.keys(m).forEach((id) => { if (!best || progressOf(m[id]) > progressOf(m[best])) best = id; });
+    return best;
+  }
+
+  // ---- module state: the profile map + the active record ------------------
+  let map = dedupe(readMap());
+  let activeId = localStorage.getItem(KEY_ACTIVE);
+  if (!activeId || !map[activeId]) activeId = pickDefault(map); // default to the richest profile
+  if (!activeId) { const r = blank(); r.savedAt = Date.now(); map[r.id] = r; activeId = r.id; }
+  let stats = map[activeId];
+
+  function saveAll() {
+    try { localStorage.setItem(KEY, JSON.stringify(map)); localStorage.setItem(KEY_ACTIVE, activeId); } catch (e) {}
+  }
+  // Persist the active record, re-merging with whatever is on disk first so a
+  // concurrent tab's progress is never overwritten (totals only move up).
+  function save() {
+    stats.savedAt = Date.now();
+    let disk = null;
+    try { disk = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+    if (disk && typeof disk === 'object' && !Array.isArray(disk)) {
+      if (disk[activeId]) { stats = mergeRec(stats, disk[activeId], { keepBalances: true }); stats.id = activeId; }
+      // keep profiles other tabs added/advanced while we were playing
+      Object.keys(disk).forEach((id) => { if (id !== activeId) map[id] = map[id] ? mergeRec(map[id], disk[id]) : normalize(disk[id]); });
+    }
+    map[activeId] = stats;
+    saveAll();
+  }
+
+  // Re-read from disk (dedupe + keep the same player by name where possible).
+  function reload() {
+    const name = stats ? normName(stats.name) : null;
+    map = dedupe(readMap());
+    const byName = (name != null) ? Object.keys(map).find((k) => normName(map[k].name) === name) : null;
+    activeId = byName || (map[activeId] ? activeId : pickDefault(map));
+    if (!activeId) { const r = blank(); r.savedAt = Date.now(); map[r.id] = r; activeId = r.id; }
+    stats = map[activeId];
+    return stats;
+  }
 
   // reset the per-day buckets at midnight
   function rollDay() {
@@ -110,13 +256,55 @@
     return stats;
   }
 
-  let stats = load();
+  saveAll();   // persist the deduped map before any rollDay save re-reads disk
   rollDay();
 
   const Stats = {
     SHOP,
     get() { return rollDay(); },
-    refresh() { stats = load(); rollDay(); return stats; },
+    refresh() { reload(); rollDay(); return stats; },
+
+    // ---- local profiles ("which one is me?") -------------------------------
+    activeId() { return activeId; },
+    // Deduped list of local profiles, richest first, for the picker UI.
+    listProfiles() {
+      return Object.keys(map).map((id) => ({
+        id, name: map[id].name || '', active: id === activeId,
+        score: (map[id].allTime && map[id].allTime.score) || 0,
+        timeMs: (map[id].allTime && map[id].allTime.timeMs) || 0,
+        savedAt: map[id].savedAt || 0,
+      })).sort((a, b) => (b.score - a.score) || (b.timeMs - a.timeMs) || (b.savedAt - a.savedAt));
+    },
+    // Make an existing profile active. Returns its record (or null).
+    selectProfile(id) {
+      if (!map[id] || id === activeId) return map[id] ? (rollDay(), stats) : null;
+      save();                       // flush the current profile first
+      activeId = id; stats = map[id]; rollDay(); saveAll();
+      return stats;
+    },
+    // Select the profile with this name (case-insensitive), creating one if none
+    // exists. This is how a name is chosen as "me".
+    selectOrCreateByName(name) {
+      const key = normName(name);
+      const found = Object.keys(map).find((id) => normName(map[id].name) === key);
+      if (found) return this.selectProfile(found);
+      save();
+      const r = blank(); r.name = (name == null ? '' : String(name)).trim().slice(0, 24); r.savedAt = Date.now();
+      map[r.id] = r; activeId = r.id; stats = r; rollDay(); saveAll();
+      return stats;
+    },
+    // Remove a profile; if it was active, fall back to the richest remaining one.
+    deleteProfile(id) {
+      if (!map[id]) return false;
+      delete map[id];
+      if (activeId === id) {
+        activeId = pickDefault(map);
+        if (!activeId) { const r = blank(); r.savedAt = Date.now(); map[r.id] = r; activeId = r.id; }
+        stats = map[activeId]; rollDay();
+      }
+      saveAll();
+      return true;
+    },
 
     // ---- treasure economy: gems, boxes, streak freezes, passport -----------
     gems() { return stats.gems || 0; },
@@ -160,7 +348,18 @@
 
     setName(name) {
       name = (name == null ? '' : String(name)).trim().slice(0, 24);
-      if (name !== stats.name) { stats.name = name; save(); }
+      if (name === stats.name) return stats.name;
+      // If another profile already owns this name, fuse this one into it so the
+      // rename can never create a duplicate.
+      const key = normName(name);
+      const other = key && Object.keys(map).find((id) => id !== activeId && normName(map[id].name) === key);
+      if (other) {
+        map[other] = mergeRec(map[other], stats); map[other].name = name;
+        delete map[activeId]; activeId = other; stats = map[other];
+      } else {
+        stats.name = name;
+      }
+      save();
       return stats.name;
     },
 
