@@ -34,12 +34,46 @@
     pianoGrand: { kind: 'pianoGrand', name: 'Piano', icon: '🎹', clef: 'grand',
       whiteLoMidi: 36, whiteHiMidi: 84 /* C2..C6, split across two keyboards */,
       splitMidi: 60 /* C4: bottom row below, top row at/above */ },
+    // --- Plucked / fretted strings (guitar family) ---
     guitar: { kind: 'fretboard', name: 'Guitar', icon: '🎸', clef: 'treble',
       fretted: true, frets: 12,
       strings: [52, 57, 62, 67, 71, 76], stringNames: ['E', 'A', 'D', 'G', 'B', 'e'] },
+    bassGuitar: { kind: 'fretboard', name: 'Bass Guitar', icon: '🎸', clef: 'bass',
+      fretted: true, frets: 12,
+      strings: [28, 33, 38, 43], stringNames: ['E', 'A', 'D', 'G'] }, // E1 A1 D2 G2
+    ukulele: { kind: 'fretboard', name: 'Ukulele', icon: '🎸', clef: 'treble',
+      fretted: true, frets: 12,
+      strings: [67, 60, 64, 69], stringNames: ['g', 'C', 'E', 'A'] }, // reentrant g4 C4 E4 A4
+    banjo: { kind: 'fretboard', name: 'Banjo', icon: '🪕', clef: 'treble',
+      fretted: true, frets: 12,
+      strings: [67, 50, 55, 59, 62], stringNames: ['g', 'D', 'G', 'B', 'd'] }, // open G, 5th-string drone
+    mandolin: { kind: 'fretboard', name: 'Mandolin', icon: '🎸', clef: 'treble',
+      fretted: true, frets: 12,
+      strings: [55, 62, 69, 76], stringNames: ['G', 'D', 'A', 'E'] }, // G3 D4 A4 E5
+
+    // --- Bowed strings (violin family) ---
     violin: { kind: 'fretboard', name: 'Violin', icon: '🎻', clef: 'treble',
       fretted: false, frets: 12,
-      strings: [55, 62, 69, 76], stringNames: ['G', 'D', 'A', 'E'] },
+      strings: [55, 62, 69, 76], stringNames: ['G', 'D', 'A', 'E'] }, // G3 D4 A4 E5
+    viola: { kind: 'fretboard', name: 'Viola', icon: '🎻', clef: 'treble',
+      fretted: false, frets: 12,
+      strings: [48, 55, 62, 69], stringNames: ['C', 'G', 'D', 'A'] }, // C3 G3 D4 A4
+    cello: { kind: 'fretboard', name: 'Cello', icon: '🎻', clef: 'bass',
+      fretted: false, frets: 12,
+      strings: [36, 43, 50, 57], stringNames: ['C', 'G', 'D', 'A'] }, // C2 G2 D3 A3
+    doubleBass: { kind: 'fretboard', name: 'Double Bass', icon: '🎻', clef: 'bass',
+      fretted: false, frets: 12,
+      strings: [40, 45, 50, 55], stringNames: ['E', 'A', 'D', 'G'] }, // E2 A2 D3 G3
+
+    // --- Voices (keyboard over the vocal range) ---
+    soprano: { kind: 'piano', name: 'Soprano', icon: '🎤', clef: 'treble',
+      whiteLoMidi: 60, whiteHiMidi: 84 /* C4..C6 */ },
+    alto: { kind: 'piano', name: 'Alto', icon: '🎤', clef: 'treble',
+      whiteLoMidi: 53, whiteHiMidi: 77 /* F3..F5 */ },
+    tenor: { kind: 'piano', name: 'Tenor', icon: '🎤', clef: 'bass',
+      whiteLoMidi: 48, whiteHiMidi: 72 /* C3..C5 */ },
+    bass: { kind: 'piano', name: 'Bass', icon: '🎤', clef: 'bass',
+      whiteLoMidi: 40, whiteHiMidi: 64 /* E2..E4 */ },
   };
 
   const sharpLetters = new Set(['C', 'D', 'F', 'G', 'A']);

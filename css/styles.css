@@ -58,6 +58,8 @@ button { font-family: inherit; cursor: pointer; }
 .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 18px 0 10px; }
 
 .instrument-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.inst-group-label { grid-column: 1 / -1; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 8px 2px -2px; }
+.inst-group-label:first-child { margin-top: 0; }
 .inst-card {
   background: var(--panel); border: 2px solid var(--edge); border-radius: var(--radius);
   padding: 16px 12px; text-align: center; color: var(--text); transition: .15s;
