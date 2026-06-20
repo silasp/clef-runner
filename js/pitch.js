@@ -11,10 +11,20 @@
 
   const FFT_SIZE = 4096;  // ~93 ms window @44.1k; bins ~10.8 Hz (harmonic-sum
                           // localises low notes despite the coarse bin spacing)
-  const MIN_FREQ = 60;    // a touch below low-E guitar / bass, with margin
-  const MAX_FREQ = 1600;  // above the top of a guitar's range
   const MIDI_LO = 33, MIDI_HI = 93; // semitone search range (~55 Hz .. ~1661 Hz)
-  const HARMONICS = 8;    // harmonics summed to score each candidate fundamental
+
+  // Live-tunable detection params (exposed as App.Pitch.cfg so the in-game debug
+  // panel can fine-tune them). Lower salienceCut = more sensitive (more notes
+  // reported); a louder ringing string can otherwise push the note you just
+  // played below the threshold and miss it.
+  const cfg = {
+    rmsGate: 0.005,     // input level below which we treat it as silence
+    salienceCut: 0.18,  // a note counts if its salience >= this fraction of the loudest
+    harmonics: 8,       // harmonics summed when scoring each candidate fundamental
+    minFreq: 60,        // a touch below low-E guitar / bass, with margin
+    maxFreq: 1600,      // above the top of a guitar's range
+  };
+
   let ctx = null, analyser = null, stream = null, source = null;
   let tbuf = null, fbuf = null, running = false;
 
@@ -61,16 +71,18 @@
     return a + (c - a) * (b - i);
   }
 
-  // Returns { freq, midi, clarity, rms, pcs } or null. `pcs` is the set of
-  // sounding pitch classes (0..11); `midi`/`freq` describe the dominant note for
-  // the tuner. midi is null and pcs is empty when nothing is playing.
+  // Returns { freq, midi, clarity, rms, pcs, candidates } or null. `pcs` is the
+  // set of sounding pitch classes (0..11) at/above the cut; `candidates` lists
+  // every local-max note (midi, pc, rel = salience/max, on = at/above cut) for
+  // the debug panel; `midi`/`freq` describe the dominant note for the tuner.
+  // midi is null and pcs is empty when nothing is playing.
   function detect() {
     if (!running) return null;
     analyser.getFloatTimeDomainData(tbuf);
     let energy = 0;
     for (let i = 0; i < FFT_SIZE; i++) energy += tbuf[i] * tbuf[i];
     const rms = Math.sqrt(energy / FFT_SIZE);
-    if (rms < 0.006) return { freq: 0, midi: null, clarity: 0, rms, pcs: [] }; // noise gate
+    if (rms < cfg.rmsGate) return { freq: 0, midi: null, clarity: 0, rms, pcs: [], candidates: [] }; // noise gate
 
     analyser.getFloatFrequencyData(fbuf);
     const binHz = ctx.sampleRate / FFT_SIZE;
@@ -82,9 +94,9 @@
     let maxSal = 0;
     for (let m = MIDI_LO; m <= MIDI_HI; m++) {
       const f0 = midiToFreq(m);
-      if (f0 < MIN_FREQ || f0 > MAX_FREQ) continue;
+      if (f0 < cfg.minFreq || f0 > cfg.maxFreq) continue;
       let s = 0;
-      for (let h = 1; h <= HARMONICS; h++) {
+      for (let h = 1; h <= cfg.harmonics; h++) {
         const b = (f0 * h) / binHz;
         if (b >= fbuf.length - 1) break;
         s += magFrac(b) / h; // weight the lower harmonics more
@@ -92,23 +104,29 @@
       sal[m - MIDI_LO] = s;
       if (s > maxSal) maxSal = s;
     }
-    if (maxSal <= 0) return { freq: 0, midi: null, clarity: 0, rms, pcs: [] };
+    if (maxSal <= 0) return { freq: 0, midi: null, clarity: 0, rms, pcs: [], candidates: [] };
 
     // Every salience peak above a fraction of the strongest is a sounding note.
-    // Leaning low here favours catching the played note over missing it.
-    const cut = maxSal * 0.33;
+    // Leaning low (small cut) favours catching the played note over missing it.
+    const cut = maxSal * cfg.salienceCut;
+    const show = maxSal * 0.08; // lower floor for what the debug panel lists
     const pcs = [];
+    const candidates = [];
     let bestM = -1, bestS = -1;
     for (let i = 0; i < sal.length; i++) {
       const s = sal[i];
-      if (s < cut) continue;
+      if (s < show) continue;
       if (s < (sal[i - 1] || 0) || s < (sal[i + 1] || 0)) continue; // local max
       const m = MIDI_LO + i;
       const pc = ((m % 12) + 12) % 12;
-      if (pcs.indexOf(pc) === -1) pcs.push(pc);
+      const on = s >= cut;
+      candidates.push({ midi: m, pc, rel: s / maxSal, on });
+      if (on && pcs.indexOf(pc) === -1) pcs.push(pc);
       if (s > bestS) { bestS = s; bestM = m; }
     }
-    if (bestM < 0) return { freq: 0, midi: null, clarity: 0, rms, pcs: [] };
+    candidates.sort((a, b) => b.rel - a.rel);
+    if (candidates.length > 10) candidates.length = 10;
+    if (bestM < 0) return { freq: 0, midi: null, clarity: 0, rms, pcs, candidates };
 
     // Refine the dominant note's frequency from its spectral peak (for the tuner).
     const f0 = midiToFreq(bestM);
@@ -124,8 +142,8 @@
       freq = (pbin + d) * binHz;
     }
 
-    return { freq, midi: freqToMidi(freq), clarity: bestS / maxSal, rms, pcs };
+    return { freq, midi: freqToMidi(freq), clarity: bestS / maxSal, rms, pcs, candidates };
   }
 
-  App.Pitch = { start, stop, detect, isRunning: () => running };
+  App.Pitch = { start, stop, detect, cfg, isRunning: () => running };
 })(window.App = window.App || {});
