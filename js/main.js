@@ -135,7 +135,10 @@
 
   // ---- microphone play-along ---------------------------------------------
   function detectMic() {
-    if (!App.Pitch || !App.Pitch.isRunning() || game.status !== 'playing') return;
+    if (!App.Pitch || !App.Pitch.isRunning()) return;
+    // Keep the tuner live while playing OR paused; only score while playing.
+    const playing = game.status === 'playing';
+    if (!playing && game.status !== 'paused') return;
     micState.frame++;
     if (micState.frame % 2 !== 0) return; // ~30 Hz is plenty
     const p = App.Pitch.detect();
@@ -146,6 +149,7 @@
     }
     micState.silentFrames = 0;
     updateTuner(p.freq);
+    if (!playing) return; // paused: tuner only, no note scoring
     if (p.midi === micState.stableMidi) micState.stableCount++;
     else { micState.stableMidi = p.midi; micState.stableCount = 1; }
     if (micState.stableCount === 2 && (micState.armed || p.midi !== micState.lastFire)) {
