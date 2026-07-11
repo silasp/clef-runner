@@ -170,14 +170,33 @@
     Object.keys(RAW).forEach((genre) => {
       const label = (GENRES.find((g) => g.key === genre) || {}).label || genre;
       RAW[genre].forEach((l, i) => out.push({
-        id: 'lick:' + genre + ':' + i, name: l.name, group: label, kind: 'lick',
+        id: 'lick:' + genre + ':' + i, name: l.name, group: label, source: l.source, kind: 'lick',
         lick: () => ({ name: l.name, source: l.source, notes: toNotes(l.notes), durs: l.durs || null }),
       }));
     });
     if (App.FolkTunes && App.FolkTunes.count && App.FolkTunes.count()) {
       App.FolkTunes.tunes().forEach((l, i) => out.push({
-        id: 'folk:' + i, name: l.name, group: 'Folk tunes', kind: 'lick',
+        id: 'folk:' + i, name: l.name, group: 'Folk tunes', source: l.source, kind: 'lick',
         lick: () => ({ name: l.name, source: l.source, notes: l.notes, durs: l.durs }),
+      }));
+    }
+    // Curated, named artist transcriptions from the lazy song corpus (Charlie
+    // Parker Omnibook, Stéphane Grappelli, Weimar Jazz DB solo phrases). These
+    // are searchable by artist even though the bulk anonymous corpus stays out.
+    // Phrases that share a tune name are collapsed into one entry whose lick()
+    // plays them back-to-back, so the list browses by piece rather than by the
+    // hundreds of individual phrases.
+    if (App.Songs && App.Songs.curated) {
+      const byKey = new Map();
+      App.Songs.curated().forEach((r) => {
+        const key = r._group + ' ‖ ' + r.name;
+        let e = byKey.get(key);
+        if (!e) { e = { name: r.name, group: r._group, source: r.source, ps: [], ds: [], res: r._res || 4 }; byKey.set(key, e); }
+        e.ps.push(r._p); e.ds.push(r._d);
+      });
+      byKey.forEach((e) => out.push({
+        id: 'song:' + e.group + ':' + e.name, name: e.name, group: e.group, source: e.source, kind: 'lick',
+        lick: () => ({ name: e.name, source: e.source, _p: e.ps.join(','), _d: e.ds.join(','), _res: e.res }),
       }));
     }
     return out;

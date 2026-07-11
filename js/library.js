@@ -23,11 +23,16 @@
   // Resolve a selected id to a playable lick object, or null if it's gone.
   function lick(id) { const it = byId(id); return it ? it.lick() : null; }
 
-  // Case-insensitive name/group search, capped for snappy rendering.
+  // Case-insensitive search over an item's name, group and source (so licks are
+  // findable by artist/collection too, e.g. "Parker" or "Grappelli"). Capped for
+  // snappy rendering.
   function search(query, limit) {
     const all = items();
     const q = (query || '').trim().toLowerCase();
-    const hit = q ? all.filter((it) => it.name.toLowerCase().includes(q) || it.group.toLowerCase().includes(q)) : all;
+    const hit = q ? all.filter((it) =>
+      it.name.toLowerCase().includes(q) ||
+      it.group.toLowerCase().includes(q) ||
+      (it.source && it.source.toLowerCase().includes(q))) : all;
     return limit ? hit.slice(0, limit) : hit;
   }
 

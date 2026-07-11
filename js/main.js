@@ -778,7 +778,17 @@
   }
 
   // ---- Library: search + multiselect of scales, pieces & imported files ---
+  // The curated artist licks (Parker Omnibook, Grappelli, Weimar phrases) live in
+  // the lazily-loaded song corpus; pull them in the first time the Library is
+  // shown so they become searchable, then re-render once they land.
+  let curatedKicked = false;
+  function ensureCuratedLicks() {
+    if (curatedKicked || !App.Songs || !App.Songs.ensureCurated) return;
+    curatedKicked = true;
+    App.Songs.ensureCurated().then(() => { if (!gameVisible()) renderLibrary(); });
+  }
   function renderLibrary() {
+    ensureCuratedLicks();
     renderLibrarySelected();
     renderLibraryList($('librarySearch') ? $('librarySearch').value : '');
   }
