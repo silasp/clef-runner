@@ -4,18 +4,30 @@
 Pipeline (re-runnable; caches everything in --work):
   1. Page through the public API (api.php, sorted by downloads) and keep
      4-part tags that have Tenor/Lead/Bari/Bass mp3 learning tracks.
-  2. Prefer tags whose tracks are "single part only" — in those the part
-     is alone on one stereo channel. (The "stereo" tracks put a mix of all
-     voices on both channels, which cannot be transcribed reliably.)
-  3. For each part track, find the isolated channel: the one whose
-     waveform is uncorrelated with every channel of the other three tracks.
-  4. Run pYIN on that channel, quantise to semitones (with a per-track
-     tuning offset), segment into notes, fix octave slips.
+  2. Demix. Every learning-track file of a tag shares the same full mix M
+     (L+R is identical across the four files); the files differ only in how
+     the voices are panned. So one side of file P is  a·voice_P + b·M, and
+       voice_P ≈ side_P − c_P · M
+     with one unknown c_P per part, fitted so the four recovered voices are
+     mutually uncorrelated (c = 0 for "single part" tracks, where one side
+     is already the bare voice). The residual correlation is the quality
+     measure.
+  3. Run pYIN on each recovered voice, quantise to semitones (with a
+     per-track tuning offset), segment into notes, fix octave slips.
+  4. Cross-check every part with an independent transcriber that needs no
+     demixing: harmonic-sum CQT salience of each file, contrasted against
+     the other three files (the note that is *boosted* in file P is part
+     P's note). Agreement between the two methods is stored per part.
 
 Then run tools/build_tags.py to assemble data/tags.json.
 
 Requirements: python3 -m pip install librosa numpy scipy  (and curl, ffmpeg)
-Be polite: downloads are sequential with a pause between files.
+Be polite: downloads are sequential with a pause between files; the CPU
+work runs in parallel worker processes.
+
+Usage:
+  extract_notes.py --work work --pages 20 download   # fetch metadata + mp3s
+  extract_notes.py --work work process --workers 3   # demix + transcribe
 """
 import argparse, glob, json, os, re, subprocess, time, warnings
 import xml.etree.ElementTree as ET
@@ -75,22 +87,97 @@ def corr(a, b):
     return float(abs(np.dot(a, b)) / np.sqrt(np.dot(a, a) * np.dot(b, b) + 1e-12))
 
 
-def isolated_channels(Y, max_corr):
-    """For each part pick the channel least correlated with all other tracks."""
-    iso = {}
+def demix(Y, grid=np.linspace(-0.3, 1.3, 161), iters=4, step=6):
+    """Recover each voice as side_P - c_P * M (see module docstring).
+
+    Returns (residual_corr, side, [c_P], [voice signals])."""
+    M = np.mean([Y[p].sum(0) for p in PARTS], 0)
+    Ms = M[::step]
+    best = None
+    for side in (0, 1):
+        Ss = [Y[p][side][::step] for p in PARTS]
+        cs = np.zeros(4)
+        for _ in range(iters):
+            for i in range(4):
+                others = [Ss[j] - cs[j] * Ms for j in range(4) if j != i]
+                scores = [sum(corr(Ss[i] - c * Ms, o) ** 2 for o in others) for c in grid]
+                cs[i] = grid[int(np.argmin(scores))]
+        V = [Ss[i] - cs[i] * Ms for i in range(4)]
+        m = float(np.mean([corr(V[i], V[j]) for i in range(4) for j in range(i + 1, 4)]))
+        if best is None or m < best[0]:
+            best = (m, side, cs.copy())
+    m, side, cs = best
+    return m, side, cs, [Y[PARTS[i]][side] - cs[i] * M for i in range(4)]
+
+
+# ---------------------------------------------------------------- cross-check transcriber
+BPS, CQT_MIN = 3, 24        # 3 bins per semitone from C1
+CQT_FUND = (88 - CQT_MIN) * BPS
+VOICE_MIDI = {'Bass': (33, 67), 'Bari': (43, 74), 'Lead': (45, 76), 'Tenor': (53, 86)}
+
+
+def salience_db(y):
+    C = np.abs(librosa.cqt(y, sr=SR, hop_length=HOP, fmin=librosa.midi_to_hz(CQT_MIN),
+                           n_bins=CQT_FUND + 28 * BPS, bins_per_octave=12 * BPS))
+    hs = np.zeros((CQT_FUND, C.shape[1]))
+    for h, w in zip(range(1, 6), [1, .8, .6, .45, .3]):
+        o = int(round(12 * BPS * np.log2(h)))
+        hs += w * C[o:o + CQT_FUND]
+    return 20 * np.log10(hs + 1e-6)
+
+
+def contrast_midi(sides):
+    """Frame-wise pitch per part from 'which pitch is boosted in this file'."""
+    L = {p: salience_db(sides[p]) for p in PARTS}
+    T = min(v.shape[1] for v in L.values())
+    L = {p: v[:, :T] for p, v in L.items()}
+    out = {}
     for p in PARTS:
-        best = None
-        for c in (0, 1):
-            x = Y[p][c][::2]
-            if np.sqrt(np.mean(x ** 2)) < 1e-3:
-                continue
-            m = max(corr(x, Y[q][d][::2]) for q in PARTS if q != p for d in (0, 1))
-            if best is None or m < best[0]:
-                best = (m, c)
-        if best is None or best[0] > max_corr:
-            return None, f'{p} not isolated ({best and round(best[0], 2)})'
-        iso[p] = best
-    return iso, None
+        con = L[p] - np.mean([L[q] for q in PARTS if q != p], 0)
+        lo, hi = VOICE_MIDI[p]
+        b0, b1 = (lo - CQT_MIN) * BPS, (hi - CQT_MIN) * BPS
+        fmax = L[p].max(0)
+        score = con[b0:b1] + (L[p][b0:b1] - fmax)
+        idx = score.argmax(0)
+        val = L[p][b0:b1][idx, np.arange(T)]
+        ok = (val > fmax - 25) & (con[b0:b1][idx, np.arange(T)] > 2) & (fmax > fmax.max() - 45)
+        out[p] = np.where(ok, CQT_MIN + (b0 + idx) / BPS, np.nan)
+    return out
+
+
+def fix_octaves(notes, cmidi):
+    """Move each pYIN note to the octave the contrast transcriber hears it in.
+
+    pYIN is precise about pitch class and timing but can lock onto the 2nd
+    harmonic (low voices) or drop an octave; the cross-file contrast is
+    good at octaves. A note moves when most contrast frames inside it are
+    the same pitch class in another octave."""
+    fr = HOP / SR
+    out = []
+    for m, s0, d in notes:
+        seg = cmidi[int(s0 / fr):int((s0 + d) / fr) + 1]
+        seg = np.round(seg[~np.isnan(seg)]).astype(int)
+        same_pc = seg[(seg - m) % 12 == 0]
+        if len(seg) and len(same_pc) >= 0.5 * len(seg):
+            vals, counts = np.unique(same_pc, return_counts=True)
+            m = int(vals[np.argmax(counts)])
+        out.append([m, s0, d])
+    return out
+
+
+def agreement(notes_a, notes_b, step=0.05):
+    """Share of A's sounding time where B has the same pitch."""
+    if not notes_a:
+        return 0.0
+    T = max(n[1] + n[2] for n in notes_a + notes_b) + 1
+    def grid(ns):
+        g = np.full(int(T / step) + 1, np.nan)
+        for m, s0, d in ns:
+            g[int(s0 / step):int((s0 + d) / step)] = m
+        return g
+    a, b = grid(notes_a), grid(notes_b)
+    v = ~np.isnan(a)
+    return float(np.mean(a[v] == b[v])) if v.any() else 0.0
 
 
 # ---------------------------------------------------------------- transcription
@@ -103,13 +190,19 @@ def nanmedfilt(x, w=7):
 
 
 def transcribe(y, part):
+    """Monophonic transcription of an isolated voice (pYIN)."""
     lo, hi = F0_RANGE[part]
     f0, vf, _ = librosa.pyin(y, fmin=lo, fmax=hi, sr=SR, hop_length=HOP, frame_length=2048)
     rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=HOP)[0][:len(f0)]
-    fr = HOP / SR
     midi = librosa.hz_to_midi(np.where(vf, f0, np.nan))
     ok = vf & (rms > 0.05 * np.nanmax(rms))
-    m = nanmedfilt(np.where(ok, midi, np.nan), 7)
+    return notes_from_midi(np.where(ok, midi, np.nan))
+
+
+def notes_from_midi(m_raw):
+    """Frame-wise MIDI (nan = unvoiced) → [[midi, start, dur]], tuning offset, stability."""
+    fr = HOP / SR
+    m = nanmedfilt(m_raw, 7)
     v = m[~np.isnan(m)]
     off = float(np.median((v + 0.5) % 1 - 0.5)) if len(v) else 0.0   # singer's tuning offset
     q = np.round(m - off)
@@ -162,49 +255,84 @@ def transcribe(y, part):
     return notes, off, acc
 
 
-def process(t, work, max_corr):
-    files = [download(t[p], f'{work}/audio/{t["id"]}_{p}.mp3') for p in PARTS]
-    if None in files:
-        return {'ok': False, 'why': 'download'}
+def process(t, work):
+    files = [f'{work}/audio/{t["id"]}_{p}.mp3' for p in PARTS]
     Y = {}
     for p, f in zip(PARTS, files):
         y, _ = librosa.load(f, sr=SR, mono=False)
         Y[p] = y if y.ndim == 2 else np.vstack([y, y])
-    iso, why = isolated_channels(Y, max_corr)
-    if why:
-        return {'ok': False, 'why': why}
-    res = {'ok': True}
-    for p in PARTS:
-        notes, off, acc = transcribe(Y[p][iso[p][1]].astype('float32'), p)
-        res[p] = {'ch': iso[p][1], 'xc': round(iso[p][0], 3), 'tuning': round(off, 3), 'acc': round(acc, 3), 'notes': notes}
+    n = min(y.shape[1] for y in Y.values())
+    Y = {p: y[:, :n] for p, y in Y.items()}
+    resid, side, cs, voices = demix(Y)
+    res = {'ok': True, 'resid': round(resid, 4), 'side': side, 'c': [round(float(c), 3) for c in cs]}
+    cm = contrast_midi({p: Y[p][side] for p in PARTS})
+    for i, p in enumerate(PARTS):
+        v = voices[i]
+        notes, off, acc = transcribe((v / (np.abs(v).max() + 1e-9)).astype('float32'), p)
+        alt, _, _ = notes_from_midi(cm[p])
+        fixed = fix_octaves(notes, cm[p])
+        before, after = agreement(notes, alt), agreement(fixed, alt)
+        if after <= before:        # only trust the octave vote when it helps
+            fixed, after = notes, before
+        res[p] = {'tuning': round(off, 3), 'acc': round(acc, 3), 'agree': round(after, 3),
+                  'octfix': sum(a[0] != b[0] for a, b in zip(notes, fixed)), 'notes': fixed}
     return res
+
+
+def cmd_download(meta, work):
+    for t in meta:
+        for p in PARTS:
+            download(t[p], f'{work}/audio/{t["id"]}_{p}.mp3')
+        print('downloaded', t['rank'], t['Title'], flush=True)
+
+
+def _job(args):
+    t, work = args
+    out = f'{work}/trans/{t["id"]}.json'
+    try:
+        res = process(t, work)
+    except Exception as e:  # corrupt download etc.
+        res = {'ok': False, 'why': str(e)[:200]}
+    json.dump(res, open(out, 'w'))
+    return t['rank'], t['Title'], res.get('resid'), {p: res[p]['agree'] for p in PARTS} if res.get('ok') else res.get('why')
+
+
+def cmd_process(meta, work, workers, wait):
+    from multiprocessing import Pool
+    pending = list(meta)
+    with Pool(workers) as pool:
+        while pending:
+            ready = [t for t in pending if all(os.path.exists(f'{work}/audio/{t["id"]}_{p}.mp3') for p in PARTS)
+                     and not os.path.exists(f'{work}/trans/{t["id"]}.json')]
+            done = [t for t in pending if os.path.exists(f'{work}/trans/{t["id"]}.json')]
+            for t in done:
+                pending.remove(t)
+            if not ready:
+                if not wait:
+                    break
+                time.sleep(20); continue
+            for r in pool.imap_unordered(_job, [(t, work) for t in ready[:workers * 4]]):
+                print(*r, flush=True)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--work', default='work')
     ap.add_argument('--pages', type=int, default=20, help='API pages of 100 tags to scan')
-    ap.add_argument('--target', type=int, default=170, help='stop after this many transcribed tags')
-    ap.add_argument('--max-corr', type=float, default=0.2)
+    ap.add_argument('--limit', type=int, default=1300, help='candidate tags (most downloaded first)')
+    sub = ap.add_subparsers(dest='cmd', required=True)
+    sub.add_parser('download')
+    pr = sub.add_parser('process')
+    pr.add_argument('--workers', type=int, default=3)
+    pr.add_argument('--wait', action='store_true', help='keep polling for new downloads')
     a = ap.parse_args()
     os.makedirs(f'{a.work}/audio', exist_ok=True); os.makedirs(f'{a.work}/trans', exist_ok=True)
-    meta = fetch_meta(a.work, a.pages)
+    meta = fetch_meta(a.work, a.pages)[:a.limit]
     json.dump(meta, open(f'{a.work}/meta.json', 'w'))
-    todo = [t for t in meta if 'single' in t['Recording']]
-    print(len(meta), 'four-part tags,', len(todo), 'with single-part tracks')
-    good = 0
-    for t in todo:
-        if good >= a.target:
-            break
-        out = f'{a.work}/trans/{t["id"]}.json'
-        if not os.path.exists(out):
-            try:
-                res = process(t, a.work, a.max_corr)
-            except Exception as e:  # corrupt download etc.
-                res = {'ok': False, 'why': str(e)[:200]}
-            json.dump(res, open(out, 'w'))
-            print(t['rank'], t['Title'], 'OK' if res['ok'] else res['why'], flush=True)
-        good += bool(json.load(open(out)).get('ok'))
+    if a.cmd == 'download':
+        cmd_download(meta, a.work)
+    else:
+        cmd_process(meta, a.work, a.workers, a.wait)
 
 
 if __name__ == '__main__':

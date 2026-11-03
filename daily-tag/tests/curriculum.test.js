@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { splitPhrases, phraseLyrics, prepareTags, nextNewItem, learningQueue, partStatus, cardId, partOrder, itemNotes } from '../js/curriculum.js';
+import { splitPhrases, phraseLyrics, prepareTags, nextNewItem, learningQueue, partStatus, cardId, partOrder, itemNotes, learnedParts, tagStatus } from '../js/curriculum.js';
 import { newCard } from '../js/srs.js';
 import { fakeTag } from './fixtures.js';
 
@@ -34,36 +34,44 @@ test('prepareTags adds tonic, phrases and difficulty', () => {
   for (const p of ['Tenor', 'Lead', 'Bari', 'Bass']) assert.equal(t.phrases[p].flat().length, t.parts[p].length);
 });
 
-test('part order puts my part first', () => {
-  assert.deepEqual(partOrder('Bari'), ['Bari', 'Tenor', 'Lead', 'Bass']);
-  assert.deepEqual(partOrder('nope'), ['Tenor', 'Lead', 'Bari', 'Bass']);
+test('part order: melody first by default, or my part first', () => {
+  assert.deepEqual(partOrder('Bari', 'melody'), ['Lead', 'Bass', 'Tenor', 'Bari']);
+  assert.deepEqual(partOrder('Bari', 'mine'), ['Bari', 'Lead', 'Bass', 'Tenor']);
+  assert.deepEqual(partOrder('nope'), ['Lead', 'Bass', 'Tenor', 'Bari']);
 });
 
-test('learning queue goes easy → hard, my part first', () => {
+test('learning queue: whole tag (all four parts) before the next, easy → hard', () => {
   const tags = prepareTags([fakeTag(1, 60, 12), fakeTag(2, 60, 4)]);
-  const q = learningQueue(tags, 'Lead');
-  assert.equal(q[0].part, 'Lead');
-  assert.ok(q[0].tag.difficulty <= q[1].tag.difficulty);
+  const q = learningQueue(tags, 'Bari', 'tag-by-tag', 'melody');
   assert.equal(q.length, 8);
-  const q2 = learningQueue(tags, 'Lead', 'tag-by-tag');
-  assert.deepEqual(q2.slice(0, 4).map(x => x.part), ['Lead', 'Tenor', 'Bari', 'Bass']);
+  assert.deepEqual(q.slice(0, 4).map(x => x.part), ['Lead', 'Bass', 'Tenor', 'Bari']);
+  assert.ok(q.slice(0, 4).every(x => x.tag === q[0].tag));
+  assert.ok(q[0].tag.difficulty <= q[4].tag.difficulty);
+  const q2 = learningQueue(tags, 'Bari', 'my-part-first', 'mine');
+  assert.deepEqual(q2.slice(0, 2).map(x => x.part), ['Bari', 'Bari']);
 });
 
-test('forward chaining: next phrase only after the previous is learned, then the whole part', () => {
+test('forward chaining within a part, then on to the next part once the whole part is learned', () => {
   const tags = prepareTags([fakeTag(1, 60, 8)]);
   const t = tags[0];
   const cards = {};
-  let it = nextNewItem(tags, cards, 'Lead');
+  let it = nextNewItem(tags, cards, 'Lead', 'tag-by-tag', 'melody');
   assert.deepEqual([it.part, it.phrase], ['Lead', 0]);
   cards[cardId('1', 'Lead', 0)] = { ...newCard(cardId('1', 'Lead', 0)), reps: 1, level: 1 };
-  assert.equal(nextNewItem(tags, cards, 'Lead').phrase, 0, 'still learning phrase 0');
+  assert.equal(nextNewItem(tags, cards, 'Lead', 'tag-by-tag', 'melody').phrase, 0, 'still learning phrase 0');
   const n = t.phrases.Lead.length;
   for (let i = 0; i < n; i++) cards[cardId('1', 'Lead', i)] = { ...newCard('x'), reps: 2, level: 2 };
-  it = nextNewItem(tags, cards, 'Lead');
+  it = nextNewItem(tags, cards, 'Lead', 'tag-by-tag', 'melody');
   assert.equal(it.phrase, 'all');
   assert.equal(itemNotes(t, 'Lead', 'all').length, t.parts.Lead.length);
-  cards[cardId('1', 'Lead', 'all')] = { ...newCard('x'), reps: 5, level: 4 };
-  it = nextNewItem(tags, cards, 'Lead');
-  assert.notEqual(it.part, 'Lead', 'moves on to another part');
+  // whole part recalled once (level 2) is enough to start the next part
+  cards[cardId('1', 'Lead', 'all')] = { ...newCard('x'), reps: 2, level: 2 };
+  it = nextNewItem(tags, cards, 'Lead', 'tag-by-tag', 'melody');
+  assert.deepEqual([it.part, it.phrase], ['Bass', 0]);
+  const st = partStatus(t, 'Lead', cards);
+  assert.ok(st.learned && !st.done);
+  assert.deepEqual(learnedParts(t, cards), ['Lead']);
+  assert.equal(tagStatus(t, cards).learnedParts, 1);
+  cards[cardId('1', 'Lead', 'all')].level = 4;
   assert.ok(partStatus(t, 'Lead', cards).done);
 });

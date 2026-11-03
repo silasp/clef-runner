@@ -6,8 +6,13 @@ No build step and no dependencies. It's plain HTML, CSS and ES modules, and runs
 
 ## What's inside
 
-* **100 popular tags** from [barbershoptags.com](https://www.barbershoptags.com), ordered by download count. The library includes every popular tag whose learning tracks could be transcribed cleanly (see *How the tag data was made*). It holds the title, arranger, lyrics, sheet-music link and links to the real learning tracks, plus the **notes of all four parts** (Tenor, Lead, Bari, Bass).
-* **A curriculum from easy to hard.** Each part gets a difficulty score from its range, leaps, chromatic notes and number of pitch changes. You learn your own part in every tag first, then the other three. You can switch to "all four parts of each tag" in Settings.
+* **Hundreds of the top 1000 tags** from [barbershoptags.com](https://www.barbershoptags.com), ordered by download count. The library includes every tag whose notes could be transcribed reliably (see *How the tag data was made*). It holds the title, arranger, lyrics, sheet-music link and links to the real learning tracks, plus the **notes of all four parts** (Tenor, Lead, Bari, Bass).
+* **Learn every part of a tag.** The aim is to know all four parts of a tag, not just one. Tags go from easy to hard, scored by range, leaps, chromatic notes and pitch changes.
+  * Each tag is learned one part at a time. By default the melody goes first, then the foundation, then the harmony: Lead → Bass → Tenor → Bari. You can choose "my part first" instead.
+  * A part counts as *learned* once you can recall the whole part. The next part then starts, and spaced reviews lock in the earlier parts.
+  * Once two or more parts are learned, **"Switch parts!"** quizzes you on a different part of the same tag by surprise.
+  * The home card shows four progress bars, one per voice.
+  * Settings can switch to "my part in every tag first".
 * **One small payoff each day.** Every lesson teaches one new phrase and reviews older ones. The results screen tells you what you can now recall, and when something becomes long-term memory ("Locked in").
 
 ## Memory techniques built in
@@ -79,17 +84,36 @@ WRONG=1 node tests/e2e/sing.mjs 0 Lead  # the same phrase a minor third off → 
 
 ## How the tag data was made
 
-`tools/extract_notes.py` and `tools/build_tags.py` (Python, librosa) produce `data/tags.json`:
+Every tag gets **two independent transcriptions**, and they check each other.
 
-1. Page through the public barbershoptags.com API sorted by downloads. Keep four-part tags that have Tenor/Lead/Bari/Bass mp3 learning tracks.
-2. Use the tags whose tracks are **single part only**. In these, the part is alone on one stereo channel. That channel is found automatically: it's the one whose waveform is uncorrelated with every channel of the other three tracks. The "stereo" style tracks put a mix of voices on both channels, so they can't be transcribed reliably and are skipped.
-3. Run pYIN on the isolated channel, quantise to semitones relative to the singer's own tuning offset, segment into notes, absorb glides and fix octave slips.
-4. Run quality gates: pitch stability ≥ 80 % of voiced frames within ±35 cents of a semitone, every voice singing through at least 40 % of the tag, and notes inside plausible voice ranges. Tags that fail are dropped; 67 were rejected.
-5. Keep the 100 most-downloaded tags that pass.
+**1. From the learning tracks** (`tools/extract_notes.py`)
 
-Key and spelling come from the arranger's written key when the notes fit it. Otherwise the app uses a Krumhansl key estimate, with the final bass note breaking ties.
+* barbershoptags.com publishes one mp3 per part. All four files of a tag carry the *same* full mix (L+R is identical); they differ only in panning. So one side of the file for part P is `a·voice_P + b·M`, and each voice is recovered as `side_P − c_P·M`. `c_P` is fitted per part so the four recovered voices are mutually uncorrelated. The leftover correlation, typically 0.01–0.08, measures how well this worked. For "single part only" tracks, c ≈ 0.
+* pYIN on each recovered voice gives precise pitch and timing. Notes are quantised against the singer's own tuning, glides are absorbed, and octave slips are fixed.
+* An independent cross-check needs no demixing. It computes harmonic-sum CQT salience for each file and contrasts it with the other three files: the pitch that is *boosted* in file P is part P's note. That method is also good at octaves, so it votes on octave errors in pYIN.
 
-**Notes are auto-transcribed, so expect occasional small errors.** Each tag page links to the sheet music and to the real learning tracks, and lessons have a 🎙 *Real singer* button that plays exactly the phrase you're learning from the original recording.
+**2. From the sheet music** (`tools/omr_batch.py`, `tools/omr_parts.py`)
+
+* The published sheet (PDF/PNG/JPG/GIF) is read with the [homr](https://github.com/liebharc/homr) OMR model.
+* Barbershop tags are engraved on two staves: Tenor/Lead on a treble-8 clef and Bari/Bass on a bass clef. homr returns chords, so the voices are split by register: on each staff the top note is Tenor or Bari, the bottom note is Lead or Bass, and a single note means unison.
+* On a benchmark of 15 tags, OMR matched the clean audio transcriptions 83–91 % per part on average, and 100 % on many parts.
+
+**3. Assemble** (`tools/build_tags.py`), taking the most-downloaded of the top 1000 tags:
+
+| Source | When | Notes used |
+|---|---|---|
+| ✓ `verified` | Audio and sheet agree (any transposition) | Audio (timing matches the real recordings) |
+| `audio` | No usable sheet, but the audio passes its own checks | Audio |
+| `sheet` | Audio unusable or no learning tracks, but the sheet is plausible and matches the recording's Lead | Sheet pitches, timed by anchoring the sheet's Lead to the recorded Lead |
+
+Plausibility checks also apply: voice ranges, Bass lowest, Tenor on top. Tags that fail are dropped. The tag page says which source was used. Expect occasional small errors outside ✓ verified tags.
+
+```bash
+python3 tools/extract_notes.py --work work --pages 25 --limit 761 download
+python3 tools/extract_notes.py --work work --pages 25 --limit 761 process --workers 3 --wait
+python3 tools/omr_batch.py --work work --top 1000 --homr homr
+python3 tools/build_tags.py --work work --top 1000
+```
 
 ## Credits
 

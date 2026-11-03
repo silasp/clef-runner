@@ -1,7 +1,7 @@
 // Daily Tag — UI shell. Screens: home (path), tag, lesson, results, settings.
 
 import { PARTS, noteName, scaleDegree, keyName } from './music.js';
-import { prepareTags, cardId, itemNotes, partStatus, learningQueue, nextNewItem, ensureCard } from './curriculum.js';
+import { prepareTags, cardId, itemNotes, partStatus, learningQueue, nextNewItem, ensureCard, tagStatus, partOrder } from './curriculum.js';
 import { buildLesson, lyricFor, nextNoteQuestion, listenChooseQuestion, lyricGapQuestion, chordAt, makeRng, allowed, EXERCISE_TYPES } from './lesson.js';
 import { review, dayNumber, dueCards, cueMask, LEARNED_LEVEL, MEMORISED_LEVEL } from './srs.js';
 import { XP, addXp, goalProgress, level as levelOf, checkBadges, setSkip, capabilities, rollStreak, BADGES, initialState } from './game.js';
@@ -72,15 +72,25 @@ function topBar() {
 
 function partChip(tag, part) {
   const st = partStatus(tag, part, state.cards);
-  const learned = tag.phrases[part].every((_, i) => {
-    const c = state.cards[cardId(tag.id, part, i)];
-    return c && c.level >= LEARNED_LEVEL;
-  });
   let cls = 'todo', sym = part === 'Bari' ? 'Br' : part[0];
   if (st.done) { cls = 'done'; sym = '★'; }
-  else if (learned) { cls = 'learned'; }
-  else if (st.introduced) { cls = 'learning'; }
-  return `<span class="chip ${cls}" title="${part}: ${st.memorised}/${st.phrases} phrases memorised">${sym}</span>`;
+  else if (st.learned) cls = 'learned';
+  else if (st.introduced) cls = 'learning';
+  return `<span class="chip ${cls}" title="${part}: ${st.learned ? 'learned' : `${st.introduced}/${st.phrases} phrases started`}${st.done ? ', memorised' : ''}">${sym}</span>`;
+}
+
+/** Four-part progress for the tag being learned: one bar per voice. */
+function quartetBars(tag) {
+  const order = partOrder(state.settings.myPart, state.settings.partOrder);
+  return `<div class="quartet">${order.map(p => {
+    const st = partStatus(tag, p, state.cards);
+    const learnedPhrases = tag.phrases[p].filter((_, i) => {
+      const c = state.cards[cardId(tag.id, p, i)];
+      return c && c.level >= LEARNED_LEVEL;
+    }).length;
+    const pct = st.done ? 100 : st.learned ? 85 : Math.round(learnedPhrases / (st.phrases + 1) * 80);
+    return `<div class="qrow"><span class="qname">${p}</span><span class="qbar"><i style="width:${pct}%" class="${st.done ? 'done' : st.learned ? 'learned' : ''}"></i></span><span class="qst">${st.done ? '★' : st.learned ? '✓' : `${learnedPhrases}/${st.phrases}`}</span></div>`;
+  }).join('')}</div>`;
 }
 
 function modeToggles() {
@@ -107,27 +117,29 @@ function bindModeToggles(root) {
 // ---------------------------------------------------------------- home
 function showHome() {
   const t = today();
-  const next = nextNewItem(TAGS, state.cards, state.settings.myPart, state.settings.mode);
+  const next = nextNewItem(TAGS, state.cards, state.settings.myPart, state.settings.mode, state.settings.partOrder);
   const due = dueCards(state.cards, t).length;
   const learnedToday = state.learnedLog.filter(m => m.day === t);
   const lvl = levelOf(state.xpTotal);
-  const q = learningQueue(TAGS, state.settings.myPart, state.settings.mode).filter(x => x.part === (state.settings.mode === 'tag-by-tag' ? x.part : state.settings.myPart));
+  const q = learningQueue(TAGS, state.settings.myPart, state.settings.mode, state.settings.partOrder);
   const seen = new Set();
   const pathTags = [];
   for (const x of q) if (!seen.has(x.tag.id)) { seen.add(x.tag.id); pathTags.push(x.tag); }
   const nextLabel = next ? `${esc(next.tag.title)} · ${next.part} · ${next.phrase === 'all' ? 'whole part' : `phrase ${next.phrase + 1}/${next.tag.phrases[next.part].length}`}` : 'Everything learned — reviews only!';
   const totalLearnedParts = TAGS.reduce((a, tg) => a + PARTS.filter(p => partStatus(tg, p, state.cards).done).length, 0);
+  const wholeTags = TAGS.filter(tg => tagStatus(tg, state.cards).learnedParts === 4).length;
 
   app.innerHTML = `${topBar()}
   <main class="screen home">
     <section class="hero">
-      <div class="hero-row"><span class="lvl">Lv ${lvl}</span><span class="muted">${state.xpTotal} XP · ${totalLearnedParts}/${TAGS.length * 4} parts memorised</span></div>
+      <div class="hero-row"><span class="lvl">Lv ${lvl}</span><span class="muted">${state.xpTotal} XP · ${wholeTags}/${TAGS.length} tags · ${totalLearnedParts} parts memorised</span></div>
       <div class="today-card">
         <div class="muted small">Today's tag</div>
         <div class="today-title">${nextLabel}</div>
+        ${next ? quartetBars(next.tag) : ''}
         ${learnedToday.length ? `<div class="payoff">✅ Learned today: ${learnedToday.map(m => esc((BY_ID[m.tagId] || {}).title) + ' · ' + m.part + (m.phrase === 'all' ? ' (whole part!)' : ` #${m.phrase + 1}`)).join(', ')}</div>` : ''}
         <button class="big go" data-act="start">${learnedToday.length ? 'Keep going' : 'Start'} · ~3 min</button>
-        <div class="muted small">${due ? `${due} review${due > 1 ? 's' : ''} due` : 'No reviews due'} · I sing <b>${state.settings.myPart}</b></div>
+        <div class="muted small">${due ? `${due} review${due > 1 ? 's' : ''} due` : 'No reviews due'}</div>
       </div>
       ${modeToggles()}
     </section>
@@ -136,7 +148,7 @@ function showHome() {
       <ol class="path">
         ${pathTags.map((tg, i) => `<li data-tag="${tg.id}" data-title="${esc(tg.title.toLowerCase())}">
           <span class="num">${i + 1}</span>
-          <span class="tt"><b>${esc(tg.title)}</b><span class="muted small">${'●'.repeat(Math.max(1, Math.round(tg.difficulty / 2)))} ${esc(tg.arranger || '')}</span></span>
+          <span class="tt"><b>${esc(tg.title)}${tg.source === 'verified' ? ' <span class="ver" title="Verified against the sheet music">✓</span>' : ''}</b><span class="muted small">${'●'.repeat(Math.max(1, Math.round(tg.difficulty / 2)))} ${esc(tg.arranger || '')}</span></span>
           <span class="chips">${PARTS.map(p => partChip(tg, p)).join('')}</span>
         </li>`).join('')}
       </ol>
@@ -182,7 +194,7 @@ function showTag(id) {
       ${tag.sheet ? `<a href="${esc(tag.sheet)}" target="_blank" rel="noopener">📄 Sheet music</a> · ` : ''}
       <a href="${esc(tag.page)}" target="_blank" rel="noopener">barbershoptags.com page</a>
       ${tag.credit ? `<div class="muted">Learning tracks: ${esc(tag.credit)}</div>` : ''}
-      <div class="muted">Notes were auto-transcribed from the learning tracks and may contain small errors — trust your ears and the sheet.</div>
+      <div class="muted">${SOURCE_NOTE[tag.source] || SOURCE_NOTE.audio}</div>
     </div>
   </main>`;
   app.querySelectorAll('[data-learn]').forEach(b => b.onclick = () => { audio.unlock(); startLesson({ tagId: tag.id, part: b.dataset.learn }); });
@@ -198,6 +210,12 @@ function showTag(id) {
   });
 }
 
+const SOURCE_NOTE = {
+  verified: '✓ Notes transcribed from the learning tracks and verified against the sheet music.',
+  audio: 'Notes auto-transcribed from the learning tracks — may contain small errors; trust your ears and the sheet.',
+  sheet: 'Notes read from the sheet music by OMR — may contain small errors; check the sheet.',
+};
+
 // ---------------------------------------------------------------- settings
 function showSettings() {
   const s = state.settings;
@@ -210,8 +228,14 @@ function showSettings() {
     </label>
     <label>Learning order
       <select name="mode">
+        <option value="tag-by-tag" ${s.mode === 'tag-by-tag' ? 'selected' : ''}>Whole tag: all four parts, then the next tag</option>
         <option value="my-part-first" ${s.mode === 'my-part-first' ? 'selected' : ''}>My part in every tag first, then the others</option>
-        <option value="tag-by-tag" ${s.mode === 'tag-by-tag' ? 'selected' : ''}>All four parts of each tag</option>
+      </select>
+    </label>
+    <label>Within a tag, start with
+      <select name="partOrder">
+        <option value="melody" ${s.partOrder === 'melody' ? 'selected' : ''}>The melody: Lead → Bass → Tenor → Bari</option>
+        <option value="mine" ${s.partOrder === 'mine' ? 'selected' : ''}>My part, then Lead → Bass → Tenor → Bari</option>
       </select>
     </label>
     <label>Daily goal
@@ -260,7 +284,7 @@ function startLesson(focus) {
   const c = caps();
   const built = buildLesson({
     tags: TAGS, cards: state.cards, today: today(), myPart: state.settings.myPart, mode: state.settings.mode,
-    canListen: c.canListen, canSing: c.canSing, seed: Date.now() & 0xffff, focus,
+    order: state.settings.partOrder, canListen: c.canListen, canSing: c.canSing, seed: Date.now() & 0xffff, focus,
   });
   if (!built.exercises.length) { toast('Nothing to practise right now 🎉'); return; }
   lesson = { ...built, i: 0, xp: 0, grades: [], learned: [], memorised: [], rng: makeRng(Date.now() & 0xffff) };
@@ -554,9 +578,19 @@ const RENDER = {
   },
 
   sing: singExercise,
+
+  // a surprise quiz on another part of the same tag
+  switch(ctx) {
+    const { ex, tag, notes } = ctx;
+    if (caps().canListen) {
+      const ch = chordAt(tag, ex.part, [notes[0]], () => 0);
+      setTimeout(() => audio.playChord(Object.values(ch.chord), 1.4), 200);
+    }
+    tapExercise(ctx, { guided: false, intro: `Switch! Now you're the <b>${ex.part}</b>${ex.phrase === 'all' ? ' — the whole part' : ''}. Tap it from memory.` });
+  },
 };
 
-function tapExercise({ ex, tag, notes, body, finish, cue }, { guided }) {
+function tapExercise({ ex, tag, notes, body, finish, cue }, { guided, intro }) {
   const n = notes.length;
   const mask = guided ? new Array(n).fill(true) : cueMask(n, cue, n * 7 + (ex.phrase === 'all' ? 99 : ex.phrase));
   const revealed = mask.slice();
@@ -566,7 +600,7 @@ function tapExercise({ ex, tag, notes, body, finish, cue }, { guided }) {
   const [lo, hi] = rangeFor(midis);
   const showNames = guided || cue <= 1;
   const lyr = lyricFor(tag, ex.part, ex.phrase);
-  const prompt = guided ? 'Tap along — follow the glowing key.'
+  const prompt = intro ? intro : guided ? 'Tap along — follow the glowing key.'
     : cue >= 4 ? 'From memory: tap every note.' : cue <= 1 ? 'Tap the notes — say them in your head as you go.' : 'Tap the notes. Fill in the hidden ones from memory.';
   body.innerHTML = `
     <p class="prompt">${prompt}</p>

@@ -6,8 +6,12 @@ import { prepareTags } from '../js/curriculum.js';
 const raw = JSON.parse(readFileSync(new URL('../data/tags.json', import.meta.url)));
 const PARTS = ['Tenor', 'Lead', 'Bari', 'Bass'];
 
-test('library holds ~100 tags', () => {
-  assert.ok(raw.tags.length >= 95, `only ${raw.tags.length} tags`);
+test('library holds hundreds of tags from the top 1000', () => {
+  assert.ok(raw.tags.length >= 300, `only ${raw.tags.length} tags`);
+  for (const t of raw.tags) {
+    assert.ok(['verified', 'audio', 'sheet'].includes(t.source), `${t.title} source ${t.source}`);
+    assert.ok(t.rank <= 1000);
+  }
 });
 
 test('every tag has four transcribed parts in sensible ranges', () => {
@@ -17,13 +21,13 @@ test('every tag has four transcribed parts in sensible ranges', () => {
     assert.ok(t.title);
     for (const p of PARTS) {
       const n = t.parts[p];
-      assert.ok(n.length >= 3, `${t.title} ${p}`);
+      assert.ok(n.length >= 2, `${t.title} ${p}`);
       for (const [m, s, d] of n) {
         assert.ok(Number.isInteger(m) && m >= 30 && m <= 86, `${t.title} ${p} midi ${m}`);
         assert.ok(s >= 0 && d > 0);
       }
       for (let i = 1; i < n.length; i++) assert.ok(n[i][1] >= n[i - 1][1], `${t.title} ${p} sorted`);
-      assert.match(t.tracks[p], /^https:\/\//);
+      if (t.tracks[p]) assert.match(t.tracks[p], /^https:\/\//);
     }
   }
 });

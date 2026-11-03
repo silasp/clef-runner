@@ -2,7 +2,7 @@
 // what to learn next (easy tags first, forward-chaining phrases).
 
 import { PARTS, detectKey, partDifficulty, parseWrittenKey } from './music.js';
-import { isMemorised, newCard } from './srs.js';
+import { isMemorised, newCard, LEARNED_LEVEL } from './srs.js';
 
 /**
  * Split one part's notes ([midi, start, dur]) into phrases.
@@ -51,25 +51,35 @@ export function cardId(tagId, part, phrase) {
 }
 
 /** Parts in the learner's preferred order (their own part first). */
-export function partOrder(myPart) {
-  if (!PARTS.includes(myPart)) return PARTS.slice();
-  return [myPart, ...PARTS.filter(p => p !== myPart)];
+/** Melody first, then the foundation, then the harmony parts. */
+export const MELODY_FIRST = ['Lead', 'Bass', 'Tenor', 'Bari'];
+
+/**
+ * Order in which to learn the parts of a tag.
+ * @param {string} myPart
+ * @param {'melody'|'mine'} [order='mine']  'melody' = Lead → Bass → Tenor → Bari;
+ *   'mine' = the learner's own part first, then melody order.
+ */
+export function partOrder(myPart, order = 'mine') {
+  if (order === 'melody' || !PARTS.includes(myPart)) return MELODY_FIRST.slice();
+  return [myPart, ...MELODY_FIRST.filter(p => p !== myPart)];
 }
 
 /**
  * Curriculum mode:
- *  - 'my-part-first' (default): learn your own part in every tag (easy → hard),
- *    then circle back for the other parts.
- *  - 'tag-by-tag': learn all four parts of a tag before moving on.
+ *  - 'tag-by-tag' (default): learn all four parts of a tag, one after the
+ *    other, before moving on to the next (easy → hard) tag.
+ *  - 'my-part-first': learn your own part in every tag first, then circle
+ *    back for the other parts.
  */
-export function learningQueue(tags, myPart, mode = 'my-part-first') {
-  const order = partOrder(myPart);
+export function learningQueue(tags, myPart, mode = 'tag-by-tag', order = 'mine') {
+  const parts = partOrder(myPart, order);
   const sorted = tags.slice().sort((a, b) => a.difficulty - b.difficulty);
   const q = [];
   if (mode === 'tag-by-tag') {
-    for (const t of sorted) for (const p of order) q.push({ tag: t, part: p });
+    for (const t of sorted) for (const p of parts) q.push({ tag: t, part: p });
   } else {
-    for (const p of order) for (const t of sorted) q.push({ tag: t, part: p });
+    for (const p of parts) for (const t of sorted) q.push({ tag: t, part: p });
   }
   return q;
 }
@@ -86,6 +96,7 @@ export function partStatus(tag, part, cards) {
   const whole = cards[cardId(tag.id, part, 'all')];
   return {
     phrases: n, introduced, memorised,
+    learned: !!whole && whole.level >= LEARNED_LEVEL,
     wholeMemorised: isMemorised(whole),
     done: isMemorised(whole),
   };
@@ -94,23 +105,38 @@ export function partStatus(tag, part, cards) {
 /**
  * The next new thing to learn. Forward chaining: introduce phrase k only
  * once phrases < k have reached level ≥ 2; when every phrase is at level
- * ≥ 2, the whole-part chain becomes the item.
+ * ≥ 2, the whole-part chain becomes the item. A part counts as done for
+ * *learning* once the whole part can be recalled (level ≥ 2) — after that
+ * spaced reviews take it to long-term memory while the next part starts.
  * @returns {{tag, part, phrase: number|'all'}|null}
  */
-export function nextNewItem(tags, cards, myPart, mode) {
-  for (const { tag, part } of learningQueue(tags, myPart, mode)) {
+export function nextNewItem(tags, cards, myPart, mode, order) {
+  for (const { tag, part } of learningQueue(tags, myPart, mode, order)) {
     const n = tag.phrases[part].length;
     const whole = cards[cardId(tag.id, part, 'all')];
-    if (isMemorised(whole)) continue;
-    let ready = true;
+    if (whole && whole.level >= LEARNED_LEVEL) continue;
     for (let i = 0; i < n; i++) {
       const c = cards[cardId(tag.id, part, i)];
-      if (!c || c.reps === 0) return { tag, part, phrase: i };
-      if (c.level < 2) { ready = false; return { tag, part, phrase: i }; }
+      if (!c || c.reps === 0 || c.level < LEARNED_LEVEL) return { tag, part, phrase: i };
     }
-    if (ready && (!whole || whole.reps === 0 || whole.level < 4)) return { tag, part, phrase: 'all' };
+    return { tag, part, phrase: 'all' };
   }
   return null;
+}
+
+/** Tag-level progress: how many of the four parts are learned / memorised. */
+export function tagStatus(tag, cards) {
+  const st = PARTS.map(p => partStatus(tag, p, cards));
+  return {
+    learnedParts: st.filter(s => s.learned).length,
+    memorisedParts: st.filter(s => s.done).length,
+    started: st.some(s => s.introduced > 0),
+  };
+}
+
+/** Parts of a tag that are learned well enough to quiz by surprise. */
+export function learnedParts(tag, cards) {
+  return PARTS.filter(p => partStatus(tag, p, cards).learned);
 }
 
 export function ensureCard(cards, id) {

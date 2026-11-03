@@ -84,12 +84,20 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 /* home */
 .hero { margin-top: 6px; }
 .hero-row { display: flex; align-items: center; gap: 8px; }
-.lvl { background: var(--ink); color: var(--bg); border-radius: 999px; padding: 1px 9px; font-weight: 700; font-size: .85rem; }
+.lvl { white-space: nowrap; flex: none; background: var(--ink); color: var(--bg); border-radius: 999px; padding: 1px 9px; font-weight: 700; font-size: .85rem; }
 .today-card {
   background: var(--card); border-radius: var(--radius); padding: 14px; margin: 10px 0;
   box-shadow: 0 2px 0 var(--line); border: 1px solid var(--line);
 }
-.today-title { font-weight: 700; font-size: 1.1rem; margin: 2px 0 10px; }
+.today-title { font-weight: 700; font-size: 1.1rem; margin: 2px 0 8px; }
+.quartet { display: grid; gap: 4px; margin: 4px 0 8px; }
+.qrow { display: grid; grid-template-columns: 44px 1fr 34px; align-items: center; gap: 8px; font-size: .8rem; }
+.qname { font-weight: 700; }
+.qbar { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; }
+.qbar i { display: block; height: 100%; background: var(--accent-2); border-radius: 999px; }
+.qbar i.learned { background: var(--gold); }
+.qbar i.done { background: var(--good); }
+.qst { text-align: right; color: var(--muted); font-weight: 700; }
 .payoff { background: var(--good-bg); border-radius: 10px; padding: 8px 10px; margin: 8px 0; font-size: .9rem; }
 .big-payoff { font-size: 1rem; text-align: left; }
 .big-payoff ul { margin: 6px 0 4px 18px; padding: 0; }
@@ -118,6 +126,7 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 .path .num { width: 26px; text-align: right; color: var(--muted); font-size: .8rem; flex: none; }
 .path .tt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .path .tt b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ver { color: var(--good); font-size: .8em; }
 .chips { display: flex; gap: 3px; flex: none; }
 .chip {
   width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center;

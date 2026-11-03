@@ -59,4 +59,10 @@ test('store round-trips and survives bad data', () => {
   assert.equal(importJson(exportJson(s)).xpTotal, 123);
   assert.throws(() => importJson('{"x":1}'));
   assert.equal(migrate({ settings: { myPart: 'Bass' } }).settings.dailyGoal, 40);
+  // v1 → v2 switches to whole-tag learning but keeps my part
+  const m = migrate({ version: 1, settings: { myPart: 'Bass', mode: 'my-part-first' } });
+  assert.equal(m.settings.mode, 'tag-by-tag');
+  assert.equal(m.settings.myPart, 'Bass');
+  assert.equal(m.version, 2);
+  assert.equal(migrate({ version: 2, settings: { mode: 'my-part-first' } }).settings.mode, 'my-part-first');
 });

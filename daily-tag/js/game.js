@@ -6,10 +6,11 @@ export const DEFAULT_GOAL = 40; // ≈ one short lesson
 
 export function initialState() {
   return {
-    version: 1,
+    version: 2,
     settings: {
       myPart: 'Lead',
-      mode: 'my-part-first',
+      mode: 'tag-by-tag',      // learn all four parts of a tag, then the next tag
+      partOrder: 'melody',     // Lead → Bass → Tenor → Bari ('mine' = my part first)
       dailyGoal: DEFAULT_GOAL,
       speech: true,
       octaveFree: true,
@@ -89,13 +90,14 @@ export const BADGES = [
   { id: 'phrases-10', icon: '🎶', name: '10 Phrases Learned', test: s => s.learnedLog.length >= 10 },
   { id: 'phrases-50', icon: '🎼', name: '50 Phrases Memorised', test: s => s.memorisedLog.length >= 50 },
   { id: 'first-tag-part', icon: '🎤', name: 'Whole Part!', test: s => s.memorisedLog.some(m => m.phrase === 'all') },
-  { id: 'quartet', icon: '💈', name: 'Whole Quartet', test: s => quartetDone(s) },
+  { id: 'all-four', icon: '🧩', name: 'All Four Parts', test: s => quartetDone(s, s.learnedLog) },
+  { id: 'quartet', icon: '💈', name: 'Whole Quartet Memorised', test: s => quartetDone(s, s.memorisedLog) },
   { id: 'xp-1000', icon: '💎', name: '1000 XP', test: s => s.xpTotal >= 1000 },
 ];
 
-function quartetDone(s) {
+function quartetDone(s, log) {
   const byTag = {};
-  for (const m of s.memorisedLog) if (m.phrase === 'all') (byTag[m.tagId] = byTag[m.tagId] || new Set()).add(m.part);
+  for (const m of log) if (m.phrase === 'all') (byTag[m.tagId] = byTag[m.tagId] || new Set()).add(m.part);
   return Object.values(byTag).some(set => set.size >= 4);
 }
 
@@ -128,9 +130,14 @@ export function capabilities(state, nowMs, env = {}) {
 export function migrate(stored) {
   const base = initialState();
   if (!stored || typeof stored !== 'object') return base;
+  // v2: the default became "learn every part of a tag" (was my-part-first)
+  if ((stored.version || 1) < 2 && stored.settings) {
+    stored = { ...stored, settings: { ...stored.settings, mode: 'tag-by-tag', partOrder: 'melody' } };
+  }
   return {
     ...base,
     ...stored,
+    version: base.version,
     settings: { ...base.settings, ...(stored.settings || {}) },
     skips: { ...base.skips, ...(stored.skips || {}) },
   };

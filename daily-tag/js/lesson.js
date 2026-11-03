@@ -1,7 +1,7 @@
 // Lesson builder: picks ~6–8 short exercises mixing reviews (spaced
 // repetition) with one new chunk, respecting "can't listen / can't sing".
 
-import { cardId, itemNotes, nextNewItem, phraseLyrics } from './curriculum.js';
+import { cardId, itemNotes, nextNewItem, phraseLyrics, learnedParts } from './curriculum.js';
 import { dueCards } from './srs.js';
 
 export const EXERCISE_TYPES = {
@@ -13,6 +13,7 @@ export const EXERCISE_TYPES = {
   lyricGap: { listen: false, sing: false, label: 'Fill in the words' },
   tap: { listen: false, sing: false, label: 'Tap it from memory' },
   sing: { listen: false, sing: true, label: 'Sing it' },
+  switch: { listen: false, sing: false, label: 'Switch parts!' },
 };
 
 export function makeRng(seed = 1) {
@@ -47,11 +48,12 @@ function parseId(id) {
  * @param {boolean} ctx.canListen
  * @param {boolean} ctx.canSing
  * @param {number} [ctx.seed]
+ * @param {'melody'|'mine'} [ctx.order]  order of parts within a tag
  * @param {{tagId:string, part:string}} [ctx.focus]  learn a specific tag/part
  * @returns {{exercises: object[], newItem: object|null}}
  */
 export function buildLesson(ctx) {
-  const { tags, cards, today, myPart, mode, canListen, canSing, seed = today, focus } = ctx;
+  const { tags, cards, today, myPart, mode, order, canListen, canSing, seed = today, focus } = ctx;
   const rng = makeRng(seed);
   const byId = Object.fromEntries(tags.map(t => [String(t.id), t]));
   const caps = { canListen, canSing };
@@ -61,10 +63,11 @@ export function buildLesson(ctx) {
   let item;
   if (focus) {
     const t = byId[String(focus.tagId)];
-    item = t ? nextNewItem([t], cards, focus.part, 'tag-by-tag') : null;
-    if (item && item.part !== focus.part) item = { tag: t, part: focus.part, phrase: 0 };
+    // only that part: put it first and stop at the first item that belongs to it
+    item = t ? nextNewItem([t], cards, focus.part, 'tag-by-tag', 'mine') : null;
+    if (t && (!item || item.part !== focus.part)) item = { tag: t, part: focus.part, phrase: 'all' };
   } else {
-    item = nextNewItem(tags, cards, myPart, mode);
+    item = nextNewItem(tags, cards, myPart, mode, order);
   }
   if (item) {
     const id = cardId(item.tag.id, item.part, item.phrase);
@@ -83,6 +86,18 @@ export function buildLesson(ctx) {
     // the final "tap" in the new-item block is the memory test: fade cues more
     let tapCount = 0;
     for (const e of ex) if (e.type === 'tap') e.cueBoost = tapCount++;
+  }
+
+  // 1b) "Switch parts!": once 2+ parts of the current tag are learned, quiz a
+  //     random *other* learned part — knowing every voice is the goal.
+  if (item) {
+    const others = learnedParts(item.tag, cards).filter(p => p !== item.part);
+    if (others.length) {
+      const part = others[Math.floor(rng() * others.length)];
+      const n = item.tag.phrases[part].length;
+      const phrase = rng() < 0.35 ? 'all' : Math.floor(rng() * n);
+      ex.push({ type: 'switch', tagId: String(item.tag.id), part, phrase, cardId: cardId(item.tag.id, part, phrase), review: true });
+    }
   }
 
   // 2) reviews of due cards (interleaved), cap so lessons stay ~3 minutes

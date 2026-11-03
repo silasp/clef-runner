@@ -35,6 +35,20 @@ test('due reviews are mixed in', () => {
   assert.ok(exercises.some(e => e.review && e.cardId === id));
 });
 
+test('"Switch parts!" quizzes another learned part of the same tag', () => {
+  const t = tags.find(x => x.id === '1');
+  const cards = {};
+  for (const p of ['Lead', 'Bass']) {
+    t.phrases[p].forEach((_, i) => { cards[cardId('1', p, i)] = { ...newCard(cardId('1', p, i)), reps: 2, level: 2, due: 99 }; });
+    cards[cardId('1', p, 'all')] = { ...newCard(cardId('1', p, 'all')), reps: 2, level: 2, due: 99 };
+  }
+  const { exercises, newItem } = buildLesson({ tags: [t], cards, today: 10, myPart: 'Lead', order: 'melody', canListen: false, canSing: false });
+  assert.equal(newItem.part, 'Tenor');
+  const sw = exercises.find(e => e.type === 'switch');
+  assert.ok(sw, 'has a switch exercise');
+  assert.ok(['Lead', 'Bass'].includes(sw.part));
+});
+
 test('focus mode teaches the requested tag/part', () => {
   const { newItem } = buildLesson({ tags, cards: {}, today: 10, myPart: 'Lead', canListen: true, canSing: true, focus: { tagId: '2', part: 'Bass' } });
   assert.equal(newItem.tag.id, '2');
