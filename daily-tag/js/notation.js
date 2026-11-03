@@ -32,64 +32,127 @@ function bottomLineStep(clef) {
 
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
+/** Glyph for a length in beats (quarter = 1): head, stem, flags, dot. */
+export function rhythmGlyph(beats) {
+  const table = [
+    [8, { hollow: true, stem: false, flags: 0, dot: false, double: true }],
+    [6, { hollow: true, stem: false, flags: 0, dot: true }],
+    [4, { hollow: true, stem: false, flags: 0, dot: false }],
+    [3, { hollow: true, stem: true, flags: 0, dot: true }],
+    [2, { hollow: true, stem: true, flags: 0, dot: false }],
+    [1.5, { hollow: false, stem: true, flags: 0, dot: true }],
+    [1, { hollow: false, stem: true, flags: 0, dot: false }],
+    [0.75, { hollow: false, stem: true, flags: 1, dot: true }],
+    [0.5, { hollow: false, stem: true, flags: 1, dot: false }],
+    [0.25, { hollow: false, stem: true, flags: 2, dot: false }],
+  ];
+  let best = table[0];
+  for (const row of table) if (Math.abs(Math.log(row[0]) - Math.log(Math.max(0.2, beats))) < Math.abs(Math.log(best[0]) - Math.log(Math.max(0.2, beats)))) best = row;
+  return { beats: best[0], ...best[1] };
+}
+
 /**
- * @param {number[][]} notes  [midi, start, dur]
+ * @param {number[][]} notes  [midi, start, dur, beats?, syllable?]
  * @param {object} o
  * @param {string} o.part
  * @param {number} o.tonic
  * @param {boolean[]} [o.mask]      which notes are visible (cue fading)
  * @param {boolean} [o.names]       show note names under heads
+ * @param {boolean} [o.rhythm]      draw note values (stems, flags, dots) and space by length
+ * @param {boolean} [o.lyrics]      draw each note's syllable (and melisma extenders)
+ * @param {boolean} [o.lyricsLead]  syllable shown before the first note belongs to an earlier note (continuation)
  * @param {number} [o.highlight]    index of note to highlight (current)
  * @param {boolean[]} [o.hits]      per-note correctness colouring
  * @param {number} [o.width]
  */
 export function renderStaff(notes, o = {}) {
-  const { part = 'Lead', tonic = 0, mask, names = false, highlight = -1, hits, width = 340, labels } = o;
+  const { part = 'Lead', tonic = 0, mask, names = false, highlight = -1, hits, width = 340, labels, rhythm = false, lyrics = false } = o;
   const clef = clefFor(part);
   const gap = 8; // px between staff lines
-  const top = 26;
-  const h = top + gap * 4 + 40;
+  const top = 30;
+  const hasSyl = lyrics && notes.some(n => n[4] != null);
+  const nameY = top + gap * 4 + 28;
+  const sylY = nameY + (names ? 14 : 0);
+  const h = (hasSyl ? sylY : nameY) + 8;
   const left = 34;
   const usable = width - left - 12;
   const n = Math.max(1, notes.length);
-  const dx = Math.min(44, usable / n);
-  const x0 = left + Math.max(0, (usable - dx * n) / 2);
+  // horizontal positions: uniform, or proportional to √length when showing rhythm
+  const weights = notes.map(nt => (rhythm ? Math.sqrt(rhythmGlyph(nt[3] || 1).beats) + 0.35 : 1));
+  const totalW = weights.reduce((a, b) => a + b, 0) || 1;
+  const unit = Math.min(44 / (rhythm ? 1.35 : 1), usable / totalW);
+  const x0 = left + Math.max(0, (usable - unit * totalW) / 2);
+  const xs = [];
+  let acc0 = x0;
+  for (const w of weights) { xs.push(acc0 + (unit * w) / 2); acc0 += unit * w; }
   const base = bottomLineStep(clef);
   const yOf = step => top + gap * 4 - (step - base) * (gap / 2);
+  const midY = top + gap * 2;
 
   let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${h}" width="100%" class="staff" role="img" aria-label="${esc(part)} notation">`;
   for (let i = 0; i < 5; i++) {
     const y = top + i * gap;
     s += `<line x1="4" x2="${width - 4}" y1="${y}" y2="${y}" class="st-line"/>`;
   }
-  // clef glyph (text keeps this tiny and font-independent enough)
   if (clef === 'bass') s += `<text x="6" y="${top + gap * 2.2}" class="st-clef" font-size="${gap * 4}">𝄢</text>`;
   else {
     s += `<text x="5" y="${top + gap * 3.6}" class="st-clef" font-size="${gap * 6}">𝄞</text>`;
     s += `<text x="12" y="${top + gap * 4 + 18}" class="st-small">8</text>`;
   }
+  let lastSylX = null; // for melisma extenders
   notes.forEach((nt, i) => {
-    const x = x0 + dx * i + dx / 2;
+    const x = xs[i];
     const visible = !mask || mask[i];
+    const syl = nt[4];
+    if (hasSyl) {
+      if (syl) {
+        s += `<text x="${x}" y="${sylY}" text-anchor="middle" class="st-syl">${esc(syl.replace(/-$/, ''))}</text>`;
+        if (syl.endsWith('-') && i + 1 < notes.length) s += `<text x="${(x + xs[i + 1]) / 2}" y="${sylY}" text-anchor="middle" class="st-syl">-</text>`;
+        lastSylX = x;
+      } else if (syl === '' && lastSylX != null) {
+        // melisma: extend a line under the held syllable to this note
+        s += `<line x1="${lastSylX + 6}" x2="${x + 4}" y1="${sylY + 2}" y2="${sylY + 2}" class="st-ext"/>`;
+        lastSylX = x - 6;
+      } else if (syl === '' && i === 0) {
+        s += `<line x1="${x - 8}" x2="${x + 4}" y1="${sylY + 2}" y2="${sylY + 2}" class="st-ext"/>`;
+      }
+    }
     if (!visible) {
-      s += `<text x="${x}" y="${top + gap * 2 + 4}" text-anchor="middle" class="st-hidden">?</text>`;
+      s += `<text x="${x}" y="${midY + 4}" text-anchor="middle" class="st-hidden">?</text>`;
       return;
     }
     const { step, acc, letter } = staffPosition(nt[0], tonic);
     const y = yOf(step);
-    // ledger lines
     const bottom = yOf(base), topLine = yOf(base + 8);
     for (let ly = bottom + gap; ly <= y + 0.1; ly += gap) s += `<line x1="${x - 8}" x2="${x + 8}" y1="${ly}" y2="${ly}" class="st-line"/>`;
     for (let ly = topLine - gap; ly >= y - 0.1; ly -= gap) s += `<line x1="${x - 8}" x2="${x + 8}" y1="${ly}" y2="${ly}" class="st-line"/>`;
     let cls = 'st-note';
     if (hits) cls += hits[i] ? ' hit' : ' miss';
     if (i === highlight) cls += ' cur';
-    const held = nt[2] >= 1.0;
-    s += `<ellipse cx="${x}" cy="${y}" rx="5.2" ry="4" transform="rotate(-20 ${x} ${y})" class="${cls}${held ? ' held' : ''}"/>`;
+    let hollow;
+    if (rhythm) {
+      const g = rhythmGlyph(nt[3] || 1);
+      hollow = g.hollow;
+      const up = y >= midY; // stems up for low notes
+      if (g.stem) {
+        const sx = up ? x + 4.8 : x - 4.8;
+        const sy2 = up ? y - 26 : y + 26;
+        s += `<line x1="${sx}" x2="${sx}" y1="${y}" y2="${sy2}" class="st-stem ${cls}"/>`;
+        for (let f = 0; f < g.flags; f++) {
+          const fy = up ? sy2 + f * 6 : sy2 - f * 6;
+          s += `<path d="M${sx} ${fy} q 7 ${up ? 6 : -6} 5 ${up ? 14 : -14}" class="st-flag ${cls}"/>`;
+        }
+      }
+      if (g.dot) s += `<circle cx="${x + 9}" cy="${y - ((step - base) % 2 === 0 ? 2 : 0)}" r="1.6" class="${cls}"/>`;
+      if (g.double) s += `<line x1="${x - 8}" x2="${x - 8}" y1="${y - 5}" y2="${y + 5}" class="st-stem"/><line x1="${x + 8}" x2="${x + 8}" y1="${y - 5}" y2="${y + 5}" class="st-stem"/>`;
+    } else {
+      hollow = nt[2] >= 1.0;
+    }
+    s += `<ellipse cx="${x}" cy="${y}" rx="5.2" ry="4" transform="rotate(-20 ${x} ${y})" class="${cls}${hollow ? ' held' : ''}"/>`;
     if (acc) s += `<text x="${x - 13}" y="${y + 4}" class="st-acc">${acc}</text>`;
     if (names) {
       const label = labels ? labels[i] : letter + acc;
-      s += `<text x="${x}" y="${h - 6}" text-anchor="middle" class="st-name">${esc(label)}</text>`;
+      s += `<text x="${x}" y="${nameY}" text-anchor="middle" class="st-name">${esc(label)}</text>`;
     }
   });
   s += '</svg>';

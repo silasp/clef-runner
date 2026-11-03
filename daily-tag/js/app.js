@@ -241,6 +241,13 @@ function showSettings() {
     <label>Daily goal
       <select name="dailyGoal">${[20, 40, 80, 120].map(v => `<option value="${v}" ${v === s.dailyGoal ? 'selected' : ''}>${v} XP ${v === 20 ? '(1–2 min)' : v === 40 ? '(~3 min)' : v === 80 ? '(~6 min)' : '(~10 min)'}</option>`).join('')}</select>
     </label>
+    <label>Show rhythm
+      <select name="rhythm">
+        <option value="learning" ${s.rhythm === 'learning' ? 'selected' : ''}>While learning a phrase (assessment is pitch-only)</option>
+        <option value="always" ${s.rhythm === 'always' ? 'selected' : ''}>Always</option>
+        <option value="never" ${s.rhythm === 'never' ? 'selected' : ''}>Never</option>
+      </select>
+    </label>
     <label class="check"><input type="checkbox" name="speech" ${s.speech ? 'checked' : ''} ${hasSpeech() ? '' : 'disabled'}> Check lyrics with speech recognition ${hasSpeech() ? '' : '(not supported here)'}</label>
     <label class="check"><input type="checkbox" name="octaveFree" ${s.octaveFree ? 'checked' : ''}> Accept singing in any octave</label>
     <label class="check"><input type="checkbox" name="showNames" ${s.showNames ? 'checked' : ''}> Show note names while learning</label>
@@ -442,9 +449,11 @@ function staffHtml(tag, part, notes, opts = {}) {
   return rows.map(start => {
     const slice = notes.slice(start, start + 10);
     const sub = arr => arr ? arr.slice(start, start + 10) : undefined;
+    const rhythm = state.settings.rhythm === 'always' || (state.settings.rhythm !== 'never' && !!opts.rhythm);
     return renderStaff(slice, {
       part, tonic: tag.tonic, names, labels: sub(labels), mask: sub(opts.mask), hits: sub(opts.hits),
       highlight: opts.highlight != null ? opts.highlight - start : -1, width: 340,
+      rhythm, lyrics: opts.lyrics !== false,
     });
   }).join('');
 }
@@ -482,13 +491,13 @@ const RENDER = {
     const degrees = notes.map(n => scaleDegree(n[0], tag.tonic)).join(' ');
     body.innerHTML = `
       <p class="prompt">Meet the next chunk of the <b>${ex.part}</b> part.</p>
-      <div class="staff-wrap">${staffHtml(tag, ex.part, notes, { names: true })}</div>
-      ${lyr ? `<p class="lyric">“${esc(lyr)}”</p>` : ''}
-      <p class="muted small center">Scale degrees: ${degrees}</p>
+      <div class="staff-wrap">${staffHtml(tag, ex.part, notes, { names: true, rhythm: true })}</div>
+      ${lyr && !timedLyrics(notes) ? `<p class="lyric">“${esc(lyr)}”</p>` : ''}
+      ${ex.phrase !== 'all' ? `<p class="muted small center">Scale degrees: ${degrees}</p>` : ''}
       ${playButtons(tag, ex, notes)}
       <button class="big go" data-act="got">Got it</button>`;
     const wrap = $('.staff-wrap', body);
-    bindPlay(body, tag, ex, notes, i => { wrap.innerHTML = staffHtml(tag, ex.part, notes, { names: true, highlight: i }); });
+    bindPlay(body, tag, ex, notes, i => { wrap.innerHTML = staffHtml(tag, ex.part, notes, { names: true, rhythm: true, highlight: i }); });
     if (caps().canListen) setTimeout(() => audio.playNotes(notes), 250);
     $('[data-act=got]', body).onclick = () => finish({ grade: 1, srs: false });
   },
@@ -605,13 +614,14 @@ function tapExercise({ ex, tag, notes, body, finish, cue }, { guided, intro }) {
   body.innerHTML = `
     <p class="prompt">${prompt}</p>
     <div class="staff-wrap"></div>
-    ${lyr && cue < 5 ? `<p class="lyric small">“${esc(lyr)}”</p>` : ''}
+    ${lyr && cue < 5 && !timedLyrics(notes) ? `<p class="lyric small">“${esc(lyr)}”</p>` : ''}
     <div class="btns center">${caps().canListen ? '<button class="sm" data-act="pipe">🎵 Start note</button>' : ''}<button class="sm" data-act="hint">💡 Reveal next</button></div>
     <div class="kb-host"></div>`;
   const draw = () => {
     const hitArr = hits.map(h => h == null ? undefined : h);
     $('.staff-wrap', body).innerHTML = staffHtml(tag, ex.part, notes, {
       names: showNames, mask: revealed, highlight: i, hits: hits.some(h => h != null) ? hitArr : undefined,
+      rhythm: guided, lyrics: cue <= 3,
     });
   };
   draw();
@@ -653,8 +663,8 @@ function singExercise({ ex, tag, notes, body, finish, cue }) {
   const speechOn = state.settings.speech && hasSpeech();
   body.innerHTML = `
     <p class="prompt">Sing the ${ex.part} line${lyr && cue >= 5 ? ' (words too!)' : ''}. Pitch counts, rhythm doesn't.</p>
-    <div class="staff-wrap">${staffHtml(tag, ex.part, notes, { names: cue <= 1, mask })}</div>
-    ${lyr && cue < 5 ? `<p class="lyric small">“${esc(lyr)}”</p>` : ''}
+    <div class="staff-wrap">${staffHtml(tag, ex.part, notes, { names: cue <= 1, mask, lyrics: cue <= 3 })}</div>
+    ${lyr && cue < 5 && (cue > 3 || !timedLyrics(notes)) ? `<p class="lyric small">“${esc(lyr)}”</p>` : ''}
     <div class="sing-chips">${midis.map((m, k) => `<span class="schip" data-k="${k}">${mask[k] ? noteName(m, tag.tonic, false) : '•'}</span>`).join('')}</div>
     <div class="meter"><span class="now">–</span><span class="cents"><i></i></span></div>
     <div class="btns center">
@@ -729,5 +739,10 @@ function singExercise({ ex, tag, notes, body, finish, cue }) {
 }
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/** True when these notes carry per-note syllables from the lyric alignment. */
+function timedLyrics(notes) {
+  return notes.some(n => n[4]);
+}
 
 boot();

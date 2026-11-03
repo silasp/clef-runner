@@ -15,6 +15,7 @@ export function initialState() {
       speech: true,
       octaveFree: true,
       showNames: true,
+      rhythm: 'learning',      // show note values while learning; pitch-only when assessing
       synthVolume: 0.7,
     },
     cards: {},

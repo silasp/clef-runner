@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLesson, allowed, nextNoteQuestion, listenChooseQuestion, lyricGapQuestion, chordAt, makeRng, EXERCISE_TYPES } from '../js/lesson.js';
+import { buildLesson, allowed, nextNoteQuestion, listenChooseQuestion, lyricGapQuestion, chordAt, makeRng, EXERCISE_TYPES, sungWords, lyricFor } from '../js/lesson.js';
 import { prepareTags, cardId } from '../js/curriculum.js';
 import { newCard } from '../js/srs.js';
 import { fakeTag } from './fixtures.js';
@@ -76,4 +76,13 @@ test('question generators', () => {
 test('rng is deterministic', () => {
   const a = makeRng(42), b = makeRng(42);
   for (let i = 0; i < 5; i++) assert.equal(a(), b());
+});
+
+test('phrase words come from per-note syllables when available', () => {
+  const notes = [[60, 0, .5, .5, 'And'], [62, .5, .5, .5, 'lo-'], [64, 1, .5, .5, 'ving'], [65, 1.5, .5, .5, ''], [67, 2, 1, 2, 'you']];
+  assert.equal(sungWords(notes), 'And loving you');
+  assert.equal(sungWords([[60, 0, 1]]), '');
+  const t = { ...tags[0], parts: { ...tags[0].parts, Lead: notes }, phrases: { ...tags[0].phrases, Lead: [notes] } };
+  assert.equal(lyricFor(t, 'Lead', 0), 'And loving you');
+  assert.equal(lyricFor(t, 'Lead', 'all'), 'And loving you');
 });

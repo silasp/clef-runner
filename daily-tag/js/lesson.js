@@ -125,7 +125,22 @@ export function buildLesson(ctx) {
   return { exercises: head.concat(mixed).slice(0, 10), newItem: item };
 }
 
+/** Words a part sings in a phrase: from per-note syllables when the tag has
+ *  timed lyrics, else a proportional slice of the lyric text. */
+export function sungWords(notes) {
+  let out = '';
+  for (const n of notes) {
+    const s = n[4];
+    if (!s) continue;
+    out += s.endsWith('-') ? s.slice(0, -1) : s + ' ';
+  }
+  return out.trim();
+}
+
 export function lyricFor(tag, part, phrase) {
+  const notes = phrase === 'all' ? tag.parts[part] : tag.phrases[part][phrase];
+  const sung = notes ? sungWords(notes) : '';
+  if (sung) return sung;
   if (phrase === 'all') return (tag.lyrics || '').trim();
   return phraseLyrics(tag.lyrics, tag.phrases[part], phrase);
 }

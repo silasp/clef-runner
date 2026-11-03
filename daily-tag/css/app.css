@@ -164,7 +164,7 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 .prog i { display: block; height: 100%; background: var(--good); border-radius: 999px; transition: width .3s; }
 .ex-head { margin: 10px 0 4px; display: flex; flex-direction: column; }
 .kind { font-weight: 800; font-size: 1.15rem; }
-.ex-body { flex: 1; }
+.ex-body { flex: 1; padding-bottom: 12px; }
 .prompt { margin: 6px 0; }
 .lyric { text-align: center; font-style: italic; margin: 6px 0; }
 .blank { display: inline-block; min-width: 60px; border-bottom: 2px solid var(--ink); }
@@ -179,6 +179,13 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 .st-note.hit { fill: var(--good); stroke: var(--good); }
 .st-note.miss { fill: var(--bad); stroke: var(--bad); }
 .st-acc { fill: var(--ink); font-size: 13px; }
+.st-syl { fill: var(--ink); font-size: 10.5px; font-style: italic; }
+.st-ext { stroke: var(--ink); stroke-width: 1; }
+.st-stem { stroke: var(--ink); stroke-width: 1.2; }
+.st-flag { fill: none; stroke: var(--ink); stroke-width: 1.6; }
+.st-stem.hit, .st-flag.hit { stroke: var(--good); }
+.st-stem.miss, .st-flag.miss { stroke: var(--bad); }
+.st-stem.cur, .st-flag.cur { stroke: var(--accent-2); }
 .st-name { fill: var(--muted); font-size: 10px; font-weight: 700; }
 .st-hidden { fill: var(--muted); font-size: 14px; font-weight: 800; opacity: .55; }
 .options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }

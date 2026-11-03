@@ -32,10 +32,14 @@ def main():
     ap.add_argument('--work', default='work')
     ap.add_argument('--top', type=int, default=1000)
     ap.add_argument('--homr', default='homr')
+    ap.add_argument('--with-sheet-only', action='store_true',
+                    help='also OMR tags that have no per-part learning tracks')
     a = ap.parse_args()
     out = f'{a.work}/sheets'
     os.makedirs(out, exist_ok=True)
-    tags = [t for t in all_tags(a.work)[:a.top] if t['Parts'] == '4' and t.get('SheetMusicAlt')]
+    tracked = lambda t: all(t['_types'].get(p) == 'mp3' for p in ('Tenor', 'Lead', 'Bari', 'Bass'))
+    tags = [t for t in all_tags(a.work)[:a.top] if t['Parts'] == '4' and t.get('SheetMusicAlt')
+            and 'Female' not in t['Type'] and (a.with_sheet_only or tracked(t))]
     json.dump(tags, open(f'{a.work}/top_meta.json', 'w'))
     print(len(tags), 'four-part tags with sheet music', flush=True)
     def priority(t):
