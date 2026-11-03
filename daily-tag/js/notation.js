@@ -52,7 +52,7 @@ export function rhythmGlyph(beats) {
 }
 
 /**
- * @param {number[][]} notes  [midi, start, dur, beats?, syllable?]
+ * @param {number[][]} notes  [midi, start, dur, beats?, syllable?, flags?]  flags: "|" barline before, "~" tie to next
  * @param {object} o
  * @param {string} o.part
  * @param {number} o.tonic
@@ -78,13 +78,21 @@ export function renderStaff(notes, o = {}) {
   const usable = width - left - 12;
   const n = Math.max(1, notes.length);
   // horizontal positions: uniform, or proportional to √length when showing rhythm
-  const weights = notes.map(nt => (rhythm ? Math.sqrt(rhythmGlyph(nt[3] || 1).beats) + 0.35 : 1));
+  const flag = (nt, f) => typeof nt[5] === 'string' && nt[5].includes(f);
+  const BAR = 0.5;   // extra room taken by a barline
+  const bars = notes.map((nt, i) => i > 0 && flag(nt, '|'));
+  const weights = notes.map((nt, i) => (rhythm ? Math.sqrt(rhythmGlyph(nt[3] || 1).beats) + 0.35 : 1) + (bars[i] ? BAR : 0));
   const totalW = weights.reduce((a, b) => a + b, 0) || 1;
   const unit = Math.min(44 / (rhythm ? 1.35 : 1), usable / totalW);
   const x0 = left + Math.max(0, (usable - unit * totalW) / 2);
-  const xs = [];
+  const xs = [], barXs = [];
   let acc0 = x0;
-  for (const w of weights) { xs.push(acc0 + (unit * w) / 2); acc0 += unit * w; }
+  weights.forEach((w, i) => {
+    const pre = bars[i] ? unit * BAR : 0;
+    if (bars[i]) barXs.push(acc0 + pre * 0.45);
+    xs.push(acc0 + pre + (unit * (w - (bars[i] ? BAR : 0))) / 2);
+    acc0 += unit * w;
+  });
   const base = bottomLineStep(clef);
   const yOf = step => top + gap * 4 - (step - base) * (gap / 2);
   const midY = top + gap * 2;
@@ -99,6 +107,7 @@ export function renderStaff(notes, o = {}) {
     s += `<text x="5" y="${top + gap * 3.6}" class="st-clef" font-size="${gap * 6}">𝄞</text>`;
     s += `<text x="12" y="${top + gap * 4 + 18}" class="st-small">8</text>`;
   }
+  for (const bx of barXs) s += `<line x1="${bx}" x2="${bx}" y1="${top}" y2="${top + gap * 4}" class="st-bar"/>`;
   let lastSylX = null; // for melisma extenders
   notes.forEach((nt, i) => {
     const x = xs[i];
@@ -149,6 +158,13 @@ export function renderStaff(notes, o = {}) {
       hollow = nt[2] >= 1.0;
     }
     s += `<ellipse cx="${x}" cy="${y}" rx="5.2" ry="4" transform="rotate(-20 ${x} ${y})" class="${cls}${hollow ? ' held' : ''}"/>`;
+    if (flag(nt, '~')) {
+      // tie: a curve under the heads (over them for high notes) to the next note, or off the edge
+      const x2 = i + 1 < notes.length ? xs[i + 1] - 4 : width - 6;
+      const below = y >= midY;   // opposite the stem
+      const yy = y + (below ? 6 : -6), bow = below ? 7 : -7;
+      s += `<path d="M${x + 4} ${yy} Q ${(x + 4 + x2) / 2} ${yy + bow} ${x2} ${yy}" class="st-tie"/>`;
+    }
     if (acc) s += `<text x="${x - 13}" y="${y + 4}" class="st-acc">${acc}</text>`;
     if (names) {
       const label = labels ? labels[i] : letter + acc;

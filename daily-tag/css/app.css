@@ -181,6 +181,8 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 .st-acc { fill: var(--ink); font-size: 13px; }
 .st-syl { fill: var(--ink); font-size: 10.5px; font-style: italic; }
 .st-ext { stroke: var(--ink); stroke-width: 1; }
+.st-bar { stroke: var(--ink); stroke-width: 1.2; }
+.st-tie { fill: none; stroke: var(--ink); stroke-width: 1.4; }
 .st-stem { stroke: var(--ink); stroke-width: 1.2; }
 .st-flag { fill: none; stroke: var(--ink); stroke-width: 1.6; }
 .st-stem.hit, .st-flag.hit { stroke: var(--good); }
@@ -308,3 +310,12 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 .rq .rq-s i { font-style: normal; display: inline-block; width: 1.1em; text-align: center; color: var(--good); }
 .rq li.done { opacity: .6; }
 .rv-actions .go { border: 0; border-radius: 12px; padding: 12px; font-weight: 700; font-size: 1rem; }
+.len-bar { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; margin: 6px 0; }
+.len-bar .sm { padding: 4px 0; min-height: 40px; display: flex; align-items: center; justify-content: center; }
+.len-ico { stroke: currentColor; stroke-width: 1.4; }
+.len-ico .f { fill: currentColor; stroke: none; }
+.len-ico .h { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.len-ico .fl { fill: none; stroke-width: 1.6; }
+.sm.on { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
+.autobar { align-items: center; }
+.autobar select { font: inherit; font-size: 16px; padding: 6px; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }

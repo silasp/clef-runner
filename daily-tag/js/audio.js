@@ -81,8 +81,13 @@ export function playNotes(notes, o = {}) {
     t = start + dur + (even ? 0.05 : 0);
     return [n[0], start, dur];
   });
+  // tied notes sound as one: extend the first, don't re-attack
+  const tiedOn = i => i > 0 && typeof notes[i - 1][5] === 'string' && notes[i - 1][5].includes('~') && notes[i - 1][0] === notes[i][0];
+  for (let i = timeline.length - 1; i > 0; i--) {
+    if (tiedOn(i) && !even) timeline[i - 1][2] = Math.max(timeline[i - 1][2], timeline[i][1] + timeline[i][2] - timeline[i - 1][1]);
+  }
   timeline.forEach(([m, s, d], i) => {
-    voice(m, t0 + s, d, 0.28);
+    if (!tiedOn(i) || even) voice(m, t0 + s, d, 0.28);
     if (onNote) setTimeout(() => onNote(i), (s + 0.08) * 1000);
   });
   const end = timeline.length ? timeline[timeline.length - 1][1] + timeline[timeline.length - 1][2] : 0;
@@ -147,6 +152,7 @@ export function sfx(kind) {
 const trackCache = new Map();
 let trackToken = 0;
 let trackStateCb = null;
+let trackCleanup = null;
 
 function trackFor(url) {
   let el = trackCache.get(url);
@@ -176,8 +182,12 @@ export function trackReady(url) {
 
 /**
  * Stream a section of the real learning track (needs network).
- * Call from a tap: play() starts inside the gesture (iOS), muted until
- * the seek to `start` lands. onState('loading' | 'playing' | 'ended' | 'error').
+ * Call from a tap, so play() starts inside the gesture (iOS). The element
+ * is never muted: iOS pauses media that is unmuted outside a gesture.
+ * When the file isn't loaded yet, the seek to `start` happens as soon as
+ * its metadata arrives (normally before any sound).
+ * onState('loading' | 'playing' | 'ended' | 'error'); onEnd(err?) with
+ * err.message 'offline' or 'blocked'.
  */
 export function playTrack(url, start = 0, end = null, onEnd, { onState } = {}) {
   stopTrack();
@@ -186,51 +196,53 @@ export function playTrack(url, start = 0, end = null, onEnd, { onState } = {}) {
   trackEl = el;
   trackStateCb = onState || null;
   const live = () => token === trackToken;
-  const state = s => { if (live() && onState) onState(s); };
-  let finished = false;
+  const target = Math.max(0, start - 0.15);
+  let finished = false, started = false;
+  const listeners = [];
+  const on = (ev, fn) => { el.addEventListener(ev, fn); listeners.push([ev, fn]); };
+  const cleanup = () => { for (const [ev, fn] of listeners) el.removeEventListener(ev, fn); listeners.length = 0; clearInterval(trackTimer); };
+  trackCleanup = cleanup;
   const finish = err => {
     if (finished) return;
     finished = true;
-    if (live()) { clearInterval(trackTimer); try { el.pause(); } catch (e) { /* ignore */ } trackEl = null; trackStateCb = null; }
+    cleanup();
+    if (live()) { try { el.pause(); } catch (e) { /* ignore */ } trackEl = null; trackStateCb = null; }
     if (onState) onState(err ? 'error' : 'ended');
     if (onEnd) onEnd(err);
   };
-  const target = Math.max(0, start - 0.15);
-  const seek = () => {
-    if (!live()) return;
-    try { el.currentTime = target; } catch (e) { /* not seekable yet */ }
+  const near = () => Math.abs(el.currentTime - target) < 0.6;
+  const seek = () => { try { if (!near()) el.currentTime = target; } catch (e) { /* not seekable yet */ } };
+  const markStarted = () => {
+    if (!live() || started || el.paused || !near() && el.currentTime < target) return;
+    started = true;
+    if (onState) onState('playing');
   };
-  el.muted = true;
-  state(el.readyState >= 3 ? 'playing' : 'loading');
-  if (el.readyState >= 1) seek(); else el.addEventListener('loadedmetadata', seek, { once: true });
-  const onPlaying = () => {
-    if (!live()) return;
-    if (Math.abs(el.currentTime - target) > 0.4) { seek(); return; }
-    el.muted = false;
-    state('playing');
-  };
-  el.addEventListener('playing', onPlaying);
-  el.addEventListener('seeked', onPlaying);
-  el.addEventListener('error', () => live() && finish(new Error('offline')), { once: true });
-  el.addEventListener('ended', () => live() && finish(), { once: true });
-  const p = el.play();
-  if (p && p.catch) p.catch(() => live() && finish(new Error('blocked')));
-  clearInterval(trackTimer);
+  if (onState) onState(el.readyState >= 3 ? 'playing' : 'loading');
+  if (el.readyState >= 1) seek(); else on('loadedmetadata', seek);
+  on('playing', () => { if (!near() && el.currentTime < target) seek(); markStarted(); });
+  on('seeked', markStarted);
+  on('timeupdate', markStarted);
+  on('error', () => live() && finish(new Error('offline')));
+  on('ended', () => live() && finish());
+  on('pause', () => { if (live() && started && !el.seeking) finish(); });   // paused by the OS (call, other app…)
+  let p;
+  try { p = el.play(); } catch (e) { finish(new Error('blocked')); return; }
+  if (p && p.catch) p.catch(e => { if (live() && !(e && e.name === 'AbortError')) finish(new Error(e && e.name === 'NotAllowedError' ? 'blocked' : 'offline')); });
   trackTimer = setInterval(() => {
-    if (!live()) { clearInterval(trackTimer); el.removeEventListener('playing', onPlaying); el.removeEventListener('seeked', onPlaying); return; }
-    if (!el.muted && end != null && el.currentTime >= end + 0.25) finish();
+    if (!live()) { cleanup(); return; }
+    if (started && end != null && el.currentTime >= end + 0.25) finish();
   }, 100);
-  // after 20 s with nothing, give up
-  setTimeout(() => { if (live() && el.muted && !finished) finish(new Error('offline')); }, 20000);
+  setTimeout(() => { if (live() && !started && !finished) finish(new Error('offline')); }, 20000);
 }
 
 export function stopTrack() {
   trackToken++;
   const cb = trackStateCb;
   trackStateCb = null;
-  if (cb) cb('ended');
   clearInterval(trackTimer);
-  if (trackEl) { try { trackEl.pause(); trackEl.muted = true; } catch (e) { /* ignore */ } trackEl = null; }
+  if (trackCleanup) { trackCleanup(); trackCleanup = null; }
+  if (trackEl) { try { trackEl.pause(); } catch (e) { /* ignore */ } trackEl = null; }
+  if (cb) cb('ended');
 }
 
 export function context() { return ctx; }

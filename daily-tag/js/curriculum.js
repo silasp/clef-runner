@@ -16,8 +16,9 @@ export function splitPhrases(notes, { minNotes = 3, maxNotes = 9 } = {}) {
     const prev = notes[i - 1], n = notes[i];
     const gap = n[1] - (prev[1] + prev[2]);
     const cur = groups[groups.length - 1];
-    const boundary = (gap >= 0.3 || prev[2] >= 1.3) && cur.length >= minNotes;
-    if (boundary || cur.length >= maxNotes) groups.push([n]);
+    const tied = typeof prev[5] === 'string' && prev[5].includes('~');   // never split a tied note
+    const boundary = !tied && (gap >= 0.3 || prev[2] >= 1.3) && cur.length >= minNotes;
+    if (!tied && (boundary || cur.length >= maxNotes)) groups.push([n]);
     else cur.push(n);
   }
   // fold a too-short tail into the previous phrase

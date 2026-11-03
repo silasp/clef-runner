@@ -6,7 +6,8 @@
 // rebuilds) and in localStorage until they reach the repo.
 //
 // Shape:  { "<tagId>": { ts, hide?, comment?, parts: { "<Part>": { ok?, notes? } } } }
-// Notes:  [midi, start, dur, beats|null, syllable]  — as in tags.json.
+// Notes:  [midi, start, dur, beats|null, syllable, flags?] — as in tags.json.
+//         flags: "|" = barline before this note, "~" = tied to the next note.
 
 export const REPO = 'silas-dsc/daily-tag';
 export const MARKER = 'daily-tag-corrections';
@@ -23,13 +24,71 @@ export function transpose(notes, i, semis) {
   return out;
 }
 
+export const hasFlag = (n, f) => typeof n[5] === 'string' && n[5].includes(f);
+
+function withFlag(n, f, on) {
+  const cur = (typeof n[5] === 'string' ? n[5] : '').replace(f, '');
+  const next = on ? cur + f : cur;
+  const out = n.slice(0, 5);
+  while (out.length < 5) out.push(out.length === 3 ? null : '');
+  if (next) out.push(['|', '~'].filter(c => next.includes(c)).join(''));
+  return out;
+}
+
+/** Note i continues a tie from note i-1 (same pitch, not re-sung). */
+export function tiedFromPrev(notes, i) {
+  return i > 0 && hasFlag(notes[i - 1], '~') && notes[i - 1][0] === notes[i][0];
+}
+
 /** Split note i into two equal notes of the same pitch (repeated notes). */
 export function splitNote(notes, i) {
   const out = clone(notes);
   const [m, s, d, b, syl] = out[i];
   const half = d / 2;
   const bh = b == null ? null : Math.max(0.25, Math.round(b / 2 * 4) / 4);
-  out.splice(i, 1, [m, r2(s), r2(half), bh, syl || ''], [m, r2(s + half), r2(d - half), bh, '']);
+  const a = withFlag(withFlag([m, r2(s), r2(half), bh, syl || ''], '|', hasFlag(out[i], '|')), '~', false);
+  const z = withFlag([m, r2(s + half), r2(d - half), bh, ''], '~', hasFlag(out[i], '~'));
+  out.splice(i, 1, a, z);
+  return out;
+}
+
+const spb = notes => {
+  const r = notes.filter(n => n[3] > 0 && n[2] > 0).map(n => n[2] / n[3]).sort((a, b) => a - b);
+  return r.length ? r[r.length >> 1] : 0.5;
+};
+
+/** Set note i's written length in beats (quarter = 1). Its sounding length
+ *  follows, at the part's tempo, up to the next note's start. */
+export function setBeats(notes, i, beats) {
+  const out = clone(notes);
+  const n = out[i];
+  const want = beats * spb(notes);
+  const room = i + 1 < out.length ? out[i + 1][1] - n[1] : Infinity;
+  n[3] = beats;
+  n[2] = r2(Math.max(0.1, Math.min(want, room)));
+  return out;
+}
+
+/** Toggle a barline before note i, or a tie from note i to the next. */
+export function toggleFlag(notes, i, f) {
+  const out = clone(notes);
+  out[i] = withFlag(out[i], f, !hasFlag(out[i], f));
+  if (f === '~' && hasFlag(out[i], '~') && out[i + 1]) out[i + 1][4] = '';   // a tied note isn't re-sung
+  return out;
+}
+
+/** Barlines every `perBar` beats, the first one before note `from`
+ *  (the first downbeat). Replaces barlines from `from` onwards. */
+export function autoBars(notes, from, perBar = 4) {
+  let out = clone(notes).map((n, k) => (k >= from ? withFlag(n, '|', false) : n));
+  let beat = 0, nextBar = 0;
+  for (let k = from; k < out.length; k++) {
+    if (beat >= nextBar - 0.01) {
+      if (k > 0) out[k] = withFlag(out[k], '|', true);
+      while (nextBar <= beat + 0.01) nextBar += perBar;
+    }
+    beat += out[k][3] || 1;
+  }
   return out;
 }
 
@@ -40,6 +99,7 @@ export function mergeNext(notes, i) {
   const a = out[i], b = out[i + 1];
   a[2] = r2(b[1] + b[2] - a[1]);
   a[3] = a[3] == null || b[3] == null ? a[3] : a[3] + b[3];
+  out[i] = withFlag(a, '~', hasFlag(b, '~'));
   out.splice(i + 1, 1);
   return out;
 }
@@ -105,7 +165,7 @@ export function recordPart(store, tagId, part, { notes = null, ok = true, now = 
   const e = store[tagId] || (store[tagId] = { parts: {} });
   e.parts = e.parts || {};
   const p = e.parts[part] || (e.parts[part] = {});
-  if (notes) p.notes = notes.map(n => [n[0], r2(n[1]), r2(n[2]), n[3] == null ? null : n[3], n[4] || '']);
+  if (notes) p.notes = notes.map(n => [n[0], r2(n[1]), r2(n[2]), n[3] == null ? null : n[3], n[4] || '', ...(n[5] ? [n[5]] : [])]);
   p.ok = ok;
   e.ts = now;
   delete e.submitted;
@@ -247,9 +307,12 @@ export function validate(payload) {
         if (!Array.isArray(c.notes) || !c.notes.length || c.notes.length > 400) throw new Error(`Bad notes for ${id} ${p}`);
         pc.notes = c.notes.map(n => {
           if (!Array.isArray(n) || n.length < 3) throw new Error(`Bad note in ${id} ${p}`);
-          const [m, s, d, b, syl] = n;
+          const [m, s, d, b, syl, fl] = n;
           if (!Number.isInteger(m) || m < 24 || m > 96 || !(s >= 0) || !(d > 0)) throw new Error(`Bad note values in ${id} ${p}`);
-          return [m, r2(s), r2(d), b == null ? null : Number(b), String(syl || '').slice(0, 40)];
+          if (b != null && !(Number(b) > 0 && Number(b) <= 16)) throw new Error(`Bad note length in ${id} ${p}`);
+          if (fl != null && fl !== '' && !/^\|?~?$/.test(fl)) throw new Error(`Bad note flags in ${id} ${p}`);
+          const v = [m, r2(s), r2(d), b == null ? null : Number(b), String(syl || '').slice(0, 40)];
+          return fl ? [...v, fl] : v;
         });
       }
       v.parts[p] = pc;

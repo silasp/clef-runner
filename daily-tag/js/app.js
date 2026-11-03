@@ -530,7 +530,7 @@ function trackButton(btn, url, start, end) {
   if (btn.dataset.playing) { audio.stopAll(); return; }
   audio.stopAll();
   const label = btn.innerHTML;
-  audio.playTrack(url, start, end, err => { if (err) toast('The real recording needs a connection'); }, {
+  audio.playTrack(url, start, end, err => { if (err) toast(err.message === 'blocked' ? 'The phone blocked playback — tap again' : 'The real recording needs a connection'); }, {
     onState: s => {
       btn.classList.toggle('loading', s === 'loading');
       btn.dataset.playing = s === 'loading' || s === 'playing' ? '1' : '';
@@ -690,6 +690,7 @@ function tapExercise({ ex, tag, notes, body, finish, cue }, { guided, intro }) {
         if (hits[i] == null) hits[i] = true;
         revealed[i] = true;
         i++; wrong = 0;
+        skipTied();
       } else {
         kb.flash(m, 'wrong');
         if (navigator.vibrate) navigator.vibrate(40);
@@ -702,6 +703,12 @@ function tapExercise({ ex, tag, notes, body, finish, cue }, { guided, intro }) {
     },
   });
   $('[data-act=hint]', body).onclick = () => { if (i < n) { hits[i] = false; revealed[i] = true; kb.hint(midis[i]); draw(); } };
+  // a tied continuation isn't sung again, so it isn't tapped either
+  function skipTied() {
+    while (i < n && i > 0 && typeof notes[i - 1][5] === 'string' && notes[i - 1][5].includes('~') && midis[i - 1] === midis[i]) {
+      hits[i] = hits[i - 1]; revealed[i] = true; i++;
+    }
+  }
   if (guided) kb.hint(midis[0]);
   function done() {
     const grade = hits.filter(h => h === true).length / n;

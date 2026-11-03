@@ -7,6 +7,23 @@ import { PARTS, noteName } from './music.js';
 import { splitPhrases } from './curriculum.js';
 import * as C from './corrections.js';
 import * as audio from './audio.js';
+import { rhythmGlyph } from './notation.js';
+
+const LENGTHS = [
+  [0.25, 'sixteenth'], [0.5, 'eighth'], [0.75, 'dotted eighth'], [1, 'quarter'],
+  [1.5, 'dotted quarter'], [2, 'half'], [3, 'dotted half'], [4, 'whole'],
+];
+
+/** A small note-value icon (head, stem, flags, dot). */
+function lengthIcon(beats) {
+  const g = rhythmGlyph(beats);
+  let s = `<svg viewBox="0 0 22 30" width="18" height="26" aria-hidden="true" class="len-ico">`;
+  s += `<ellipse cx="8" cy="23" rx="5" ry="3.7" transform="rotate(-20 8 23)" class="${g.hollow ? 'h' : 'f'}"/>`;
+  if (g.stem) s += `<line x1="12.6" x2="12.6" y1="22" y2="3"/>`;
+  for (let f = 0; f < g.flags; f++) s += `<path d="M12.6 ${3 + f * 5} q 6 5 4 11" class="fl"/>`;
+  if (g.dot) s += `<circle cx="18" cy="23" r="1.7" class="f"/>`;
+  return s + '</svg>';
+}
 
 let env = null;      // { app, esc, toast, topBar, staffHtml, raw(id), tag(id), tags(), store(), remote(), save(), rank(id) }
 let view = null;     // current review session
@@ -206,6 +223,17 @@ function render() {
           <button class="sm" data-op="delete" title="Delete note" ${view.notes.length > 1 ? '' : 'disabled'}>🗑</button>
           <button class="sm" data-op="undo" ${view.undo.length ? '' : 'disabled'}>↶ Undo</button>
         </div>
+        <div class="len-bar" role="group" aria-label="Length of the selected note">
+          ${LENGTHS.map(([b, name]) => `<button class="sm len ${Math.abs((selNote[3] || 0) - b) < 0.01 ? 'on' : ''}" data-len="${b}" title="${name}" aria-label="${name}">${lengthIcon(b)}</button>`).join('')}
+        </div>
+        <div class="edit-bar" role="group" aria-label="Barlines and ties">
+          <button class="sm ${C.hasFlag(selNote, '|') ? 'on' : ''}" data-op="bar" ${sel > 0 ? '' : 'disabled'} title="Barline before this note">┃ Bar before</button>
+          <button class="sm ${C.hasFlag(selNote, '~') ? 'on' : ''}" data-op="tie" ${view.notes[sel + 1] && view.notes[sel + 1][0] === selNote[0] ? '' : 'disabled'} title="Tie to the next note (same pitch, held — not sung again)">⁀ Tie to next</button>
+        </div>
+        <div class="edit-bar autobar">
+          <button class="sm" data-op="autobar" title="Treat the selected note as a downbeat and place barlines every bar from here">Bars from here, every</button>
+          <select name="perBar" aria-label="Beats per bar">${[2, 3, 4, 6].map(b => `<option value="${b}" ${b === (view.perBar || 4) ? 'selected' : ''}>${b} beats</option>`).join('')}</select>
+        </div>
         <label class="syl">Syllable on ${noteName(selNote[0], tag.tonic)}
           <input name="syl" value="${esc(selNote[4] || '')}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="(held from before)">
         </label>
@@ -278,6 +306,9 @@ function bind() {
       case 'split': edit(n => C.splitNote(n, i), { keepSel: true }); break;
       case 'merge': edit(n => C.mergeNext(n, i), { keepSel: true }); break;
       case 'delete': edit(n => C.deleteNote(n, i)); break;
+      case 'bar': edit(n => C.toggleFlag(n, i, '|'), { keepSel: true }); break;
+      case 'tie': edit(n => C.toggleFlag(n, i, '~'), { keepSel: true }); break;
+      case 'autobar': edit(n => C.autoBars(n, i, view.perBar || 4), { keepSel: true }); break;
       case 'undo': {
         const u = view.undo.pop();
         if (u) { view.notes = u.notes; view.range = u.range; view.sel = u.sel; persistEdit(); render(); }
@@ -285,6 +316,9 @@ function bind() {
       }
     }
   });
+  app.querySelectorAll('[data-len]').forEach(b => b.onclick = () => edit(n => C.setBeats(n, view.sel, Number(b.dataset.len)), { keepSel: true }));
+  const per = $('select[name=perBar]', app);
+  per.onchange = () => { view.perBar = Number(per.value); };
   const syl = $('input[name=syl]', app);
   syl.onchange = () => edit(n => C.setSyllable(n, view.sel, syl.value), { keepSel: true });
   const words = $('input[name=words]', app);
@@ -299,7 +333,7 @@ function bind() {
     audio.unlock(); audio.stopAll();
     const label = btn.textContent;
     let synthStarted = false;
-    audio.playTrack(tag.tracks[view.part], start, end, err => { if (err) env.toast('The recording needs a connection'); }, {
+    audio.playTrack(tag.tracks[view.part], start, end, err => { if (err) env.toast(err.message === 'blocked' ? 'The phone blocked playback — tap again' : 'The real recording needs a connection'); }, {
       onState: s => {
         btn.classList.toggle('loading', s === 'loading');
         btn.textContent = s === 'loading' ? '⏳ Loading…' : s === 'playing' ? '■ Stop' : label;

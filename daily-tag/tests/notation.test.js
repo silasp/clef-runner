@@ -58,3 +58,11 @@ test('staff shows syllables under notes with melisma extenders and hyphens', () 
   const plain = renderStaff(notes, { part: 'Lead' });
   assert.ok(!plain.includes('st-syl') && !plain.includes('st-stem'), 'pitch-only view has neither');
 });
+
+test('barlines and ties are drawn', async () => {
+  const { renderStaff } = await import('../js/notation.js');
+  const svg = renderStaff([[60, 0, 1, 1, 'a', '~'], [60, 1, 1, 1, ''], [62, 2, 1, 1, 'b', '|']], { rhythm: true });
+  assert.equal((svg.match(/st-bar/g) || []).length, 1);
+  assert.equal((svg.match(/st-tie/g) || []).length, 1);
+  assert.equal((renderStaff([[60, 0, 1, 1, 'a', '|']]).match(/st-bar/g) || []).length, 0, 'no barline before the first note');
+});

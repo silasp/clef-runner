@@ -48,12 +48,30 @@ const words = Array.from({ length: before + 1 }, (_, i) => `w${i}`).join(' ');
 await page.fill('input[name=words]', words);
 await page.click('[data-act=lay]');
 assert.equal(await page.textContent('.nchip >> nth=1 >> span'), 'w1');
+
+// lengths, barlines and ties
+await page.click('.nchip >> nth=0');
+await page.click('[data-len="0.5"]');
+assert.ok(await page.locator('[data-len="0.5"].on').count(), 'eighth selected');
+await page.click('.nchip >> nth=1');
+await page.click('[data-op=bar]');
+assert.equal(await page.locator('.ours .st-bar').count(), 1, 'barline drawn');
+await page.click('[data-op=autobar]');
+await page.click('.nchip >> nth=0');
+await page.click('[data-op=down]');      // the split pair is a semitone apart now: make them equal again
+assert.equal(await page.locator('[data-op=tie]:not([disabled])').count(), 1, 'tie allowed between equal pitches');
+await page.click('[data-op=tie]');
+assert.equal(await page.locator('.ours .st-tie').count(), 1, 'tie drawn');
+const flags = await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes.map(n => n[5] || ''), id);
+assert.equal(flags[0], '~');
+assert.equal(flags[1], '|');
+await page.click('[data-act=play]');      // synth copes with ties
 await shot('r3-edited');
 
 // the fix is live on this device, before submitting
 const stored = await page.evaluate(k => JSON.parse(localStorage.getItem('daily-tag:corrections')), 'x');
 assert.ok(stored[id].parts.Lead.notes, 'edit stored locally');
-assert.equal(stored[id].parts.Lead.notes[1][4], 'w1');
+assert.equal(stored[id].parts.Lead.notes[0][3], 0.5);
 await page.reload();
 await page.waitForSelector('.review .nchip');
 assert.equal(await page.locator('.nchip').count(), before + 1, 'edit survives a reload');
@@ -73,7 +91,7 @@ assert.match(body, /Lead ✎/);
 // the corrected notes reach lessons too
 await page.goto(BASE + `#drill/intro/${id}/Lead/0`);
 await page.waitForSelector('.ex-body .staff-wrap');
-assert.match(await page.textContent('.ex-body'), /w1/);
+assert.match(await page.textContent('.ex-body'), /w0/);
 assert.ok(await page.locator('[data-act=fix]').count(), 'lesson offers a fix link');
 
 // hide a tag

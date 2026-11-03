@@ -105,3 +105,25 @@ test('validate rejects malformed payloads', () => {
   const ok = validate({ 7: { ts: 3, parts: { Lead: { ok: true, notes: [[60, 0, 1, null, 'la<script>'.repeat(10)]] } } } });
   assert.equal(ok['7'].parts.Lead.notes[0][4].length, 40);
 });
+
+test('lengths, barlines and ties', async () => {
+  const { setBeats, toggleFlag, autoBars, hasFlag, tiedFromPrev } = await import('../js/corrections.js');
+  const n = [[60, 0, 0.5, 1, 'a'], [60, 0.5, 0.5, 1, 'b'], [62, 1, 1, 2, 'c'], [64, 2, 0.5, 1, 'd'], [65, 2.5, 1.5, 3, 'e']];
+  const l = setBeats(n, 2, 1);
+  assert.equal(l[2][3], 1);
+  assert.equal(l[2][2], 0.5, 'sounding length follows the tempo (0.5 s per beat)');
+  assert.equal(setBeats(n, 0, 4)[0][2], 0.5, 'never runs into the next note');
+  const b = autoBars(n, 0, 4);
+  assert.deepEqual(b.map(x => hasFlag(x, '|')), [false, false, false, true, false]);
+  const b3 = autoBars(n, 1, 2);
+  assert.deepEqual(b3.map(x => hasFlag(x, '|')), [false, true, false, true, true]);
+  const t = toggleFlag(n, 0, '~');
+  assert.equal(t[0][5], '~');
+  assert.equal(t[1][4], '', 'tied-to note is not re-sung');
+  assert.ok(tiedFromPrev(t, 1));
+  const both = toggleFlag(toggleFlag(t, 0, '|'), 0, '~');
+  assert.equal(both[0][5], '|');
+  assert.equal(toggleFlag(both, 0, '|')[0].length, 5, 'no empty flag element');
+  assert.deepEqual(validate({ 1: { parts: { Lead: { notes: [[60, 0, 1, 1, 'a', '|~']] } } } })['1'].parts.Lead.notes[0], [60, 0, 1, 1, 'a', '|~']);
+  assert.throws(() => validate({ 1: { parts: { Lead: { notes: [[60, 0, 1, 1, 'a', 'x']] } } } }), /flags/);
+});
