@@ -2,6 +2,8 @@
 
 Memorise barbershop tags, all four parts, a few minutes a day. It works like Duolingo for tags: short lessons, streaks and XP, spaced repetition, and exercises you can do anywhere. You can sing into the mic, listen, or tap silently on a piano keyboard.
 
+**Live:** https://silas-dsc.github.io/daily-tag/ (once GitHub Pages is enabled; see *Deploy*)
+
 No build step and no dependencies. It's plain HTML, CSS and ES modules, and runs offline as a home-screen app. It's sized for a 320px-wide iPhone SE.
 
 ## What's inside
@@ -14,6 +16,13 @@ No build step and no dependencies. It's plain HTML, CSS and ES modules, and runs
   * The home card shows four progress bars, one per voice.
   * Settings can switch to "my part in every tag first".
 * **One small payoff each day.** Every lesson teaches one new phrase and reviews older ones. The results screen tells you what you can now recall, and when something becomes long-term memory ("Locked in").
+
+## Notation, lyrics and rhythm
+
+* **Syllables under notes.** Each note shows the syllable sung on it. A syllable held over several notes (a melisma) gets an extender line, and multi-syllable words are hyphenated ("roam-ing"), as on sheet music.
+* **Rhythm while learning, pitch when testing.** While you meet and tap along with a phrase, notes show their values (stems, flags, dots) and are spaced by length. Assessment shows pitch-only noteheads, and scoring ignores rhythm. Settings → *Show rhythm* can make it always or never.
+  * Rhythm comes from the sheet music wherever the recording matches it. Otherwise it's quantised from the recording at an estimated tempo.
+  * Tags are sung freely, with holds and swells, so treat rhythm from recordings as approximate.
 
 ## Memory techniques built in
 
@@ -40,6 +49,7 @@ No build step and no dependencies. It's plain HTML, CSS and ES modules, and runs
 | Fill in the words | | |
 | Tap it from memory (with cues fading) | | |
 | Sing it: pitch tracking plus speech recognition | ✔ (start note) | ✔ |
+| Switch parts! (tap another learned part of the same tag) | optional chord | |
 
 **Can't listen / can't sing now.** Every exercise that needs sound or the mic has a *Can't listen now* / *Can't sing now* link. Tapping it swaps that exercise and the rest of the lesson for silent ones (keyboard and notation) for 15 minutes. The home screen has toggles for 🔇 *Silent mode* and 🤐 *No singing* (1 hour each), for the bus or the office.
 
@@ -98,7 +108,14 @@ Every tag gets **two independent transcriptions**, and they check each other.
 * Barbershop tags are engraved on two staves: Tenor/Lead on a treble-8 clef and Bari/Bass on a bass clef. homr returns chords, so the voices are split by register: on each staff the top note is Tenor or Bari, the bottom note is Lead or Bass, and a single note means unison.
 * On a benchmark of 15 tags, OMR matched the clean audio transcriptions 83–91 % per part on average, and 100 % on many parts.
 
-**3. Assemble** (`tools/build_tags.py`), taking the most-downloaded of the top 1000 tags:
+**3. Lyric timing** (`tools/align_lyrics.py`)
+
+* [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes each recovered voice with word timestamps, primed with the tag's lyrics.
+* Recognised words are aligned to the real lyric text, so mishearings don't matter much, and hyphenated with pyphen.
+* A small dynamic programme then starts each word on its own note as close as possible to when it was sung. The notes up to the next word carry the rest of its syllables, then the melisma.
+* Parts without their own recognition yet borrow the Lead's word timing.
+
+**4. Assemble** (`tools/build_tags.py`), from the 761 most-downloaded four-part tags that have per-part learning tracks:
 
 | Source | When | Notes used |
 |---|---|---|
@@ -112,8 +129,14 @@ Plausibility checks also apply: voice ranges, Bass lowest, Tenor on top. Tags th
 python3 tools/extract_notes.py --work work --pages 25 --limit 761 download
 python3 tools/extract_notes.py --work work --pages 25 --limit 761 process --workers 3 --wait
 python3 tools/omr_batch.py --work work --top 1000 --homr homr
+python3 tools/align_lyrics.py --work work --parts Lead          # then Bass,Tenor,Bari
 python3 tools/build_tags.py --work work --top 1000
+python3 tools/test_build.py                                     # self-test of the build helpers
 ```
+
+## Deploy
+
+It's a static site. In the GitHub repo, go to **Settings → Pages → Deploy from a branch → `main` / root**. The page is then served at `https://<owner>.github.io/daily-tag/`.
 
 ## Credits
 
