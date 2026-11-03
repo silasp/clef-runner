@@ -87,23 +87,30 @@ def corr(a, b):
     return float(abs(np.dot(a, b)) / np.sqrt(np.dot(a, a) * np.dot(b, b) + 1e-12))
 
 
-def demix(Y, grid=np.linspace(-0.3, 1.3, 161), iters=4, step=6):
+def demix(Y, grid=np.linspace(-0.3, 1.3, 161), iters=4):
     """Recover each voice as side_P - c_P * M (see module docstring).
 
-    Returns (residual_corr, side, [c_P], [voice signals])."""
+    Every correlation between candidate voices v_i = S_i - c_i M follows
+    from the 5x5 Gram matrix of (S_1..S_4, M), so the fit costs one pass
+    over the audio. Returns (residual_corr, side, [c_P], [voice signals])."""
     M = np.mean([Y[p].sum(0) for p in PARTS], 0)
-    Ms = M[::step]
     best = None
     for side in (0, 1):
-        Ss = [Y[p][side][::step] for p in PARTS]
+        X = np.vstack([Y[p][side] for p in PARTS] + [M]).astype(np.float64)
+        G = X @ X.T
+
+        def dot(i, j, ci, cj):      # <S_i - ci M, S_j - cj M>
+            return G[i, j] - cj * G[i, 4] - ci * G[4, j] + ci * cj * G[4, 4]
+
+        def c2(i, j, ci, cj):
+            num = dot(i, j, ci, cj)
+            return num * num / (dot(i, i, ci, ci) * dot(j, j, cj, cj) + 1e-18)
         cs = np.zeros(4)
         for _ in range(iters):
             for i in range(4):
-                others = [Ss[j] - cs[j] * Ms for j in range(4) if j != i]
-                scores = [sum(corr(Ss[i] - c * Ms, o) ** 2 for o in others) for c in grid]
+                scores = [sum(c2(i, j, c, cs[j]) for j in range(4) if j != i) for c in grid]
                 cs[i] = grid[int(np.argmin(scores))]
-        V = [Ss[i] - cs[i] * Ms for i in range(4)]
-        m = float(np.mean([corr(V[i], V[j]) for i in range(4) for j in range(i + 1, 4)]))
+        m = float(np.mean([np.sqrt(c2(i, j, cs[i], cs[j])) for i in range(4) for j in range(i + 1, 4)]))
         if best is None or m < best[0]:
             best = (m, side, cs.copy())
     m, side, cs = best
