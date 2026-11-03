@@ -520,21 +520,24 @@ function bindPlay(root, tag, ex, notes, onNote) {
     audio.preloadTrack(tag.tracks[ex.part]);
     tr.onclick = () => {
       const start = notes[0][1], last = notes[notes.length - 1];
-      trackButton(tr, tag.tracks[ex.part], start, last[1] + last[2]);
+      trackButton(tr, tag.tracks[ex.part], start, last[1] + last[2], notes, onNote);
     };
   }
 }
 
 /** Play (or stop) a real recording from a button, showing loading progress. */
-function trackButton(btn, url, start, end) {
+function trackButton(btn, url, start, end, notes = null, onNote = null) {
   if (btn.dataset.playing) { audio.stopAll(); return; }
   audio.stopAll();
   const label = btn.innerHTML;
+  let following = false;
   audio.playTrack(url, start, end, err => { if (err) toast(err.message === 'blocked' ? 'The phone blocked playback — tap again' : 'The real recording needs a connection'); }, {
     onState: s => {
       btn.classList.toggle('loading', s === 'loading');
       btn.dataset.playing = s === 'loading' || s === 'playing' ? '1' : '';
       btn.innerHTML = s === 'loading' ? '<span class="spin"></span> Loading…' : s === 'playing' ? '■ Stop' : label;
+      // light up each note as the real singer reaches it
+      if (s === 'playing' && notes && onNote && !following) { following = true; audio.followTrack(notes, i => onNote(i)); }
     },
   });
 }

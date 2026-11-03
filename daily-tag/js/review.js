@@ -8,6 +8,7 @@ import { splitPhrases } from './curriculum.js';
 import * as C from './corrections.js';
 import * as audio from './audio.js';
 import { rhythmGlyph } from './notation.js';
+import { mountKeyboard, rangeFor } from './keyboard.js';
 
 const LENGTHS = [
   [0.25, 'sixteenth'], [0.5, 'eighth'], [0.75, 'dotted eighth'], [1, 'quarter'],
@@ -223,6 +224,15 @@ function render() {
           <button class="sm" data-op="delete" title="Delete note" ${view.notes.length > 1 ? '' : 'disabled'}>🗑</button>
           <button class="sm" data-op="undo" ${view.undo.length ? '' : 'disabled'}>↶ Undo</button>
         </div>
+        <div class="pitch-row">
+          <span class="muted small">Tap a key to set <b>${noteName(selNote[0], tag.tonic)}</b>'s pitch</span>
+          <label class="check small"><input type="checkbox" name="advance" ${view.advance === false ? '' : 'checked'}> then next note</label>
+        </div>
+        <div class="kb-host fix-kb"></div>
+        <div class="edit-bar">
+          <button class="sm" data-op="oct-down" title="Octave down">8va ▼</button>
+          <button class="sm" data-op="oct-up" title="Octave up">8va ▲</button>
+        </div>
         <div class="len-bar" role="group" aria-label="Length of the selected note">
           ${LENGTHS.map(([b, name]) => `<button class="sm len ${Math.abs((selNote[3] || 0) - b) < 0.01 ? 'on' : ''}" data-len="${b}" title="${name}" aria-label="${name}">${lengthIcon(b)}</button>`).join('')}
         </div>
@@ -258,13 +268,14 @@ function render() {
   if (tag.tracks && tag.tracks[view.part]) audio.preloadTrack(tag.tracks[view.part]);
 }
 
-function edit(fn, { keepSel = false } = {}) {
+function edit(fn, { keepSel = false, then = null } = {}) {
   view.undo.push({ notes: view.notes, range: [...view.range], sel: view.sel });
   if (view.undo.length > 50) view.undo.shift();
   const before = view.notes.length;
   view.notes = fn(view.notes);
   view.range = [view.range[0], view.range[1] + view.notes.length - before];
   if (!keepSel) view.sel = Math.min(view.sel, view.range[1] - 1);
+  if (then) then();
   persistEdit();
   render();
 }
@@ -303,6 +314,8 @@ function bind() {
     switch (b.dataset.op) {
       case 'up': edit(n => C.transpose(n, i, 1), { keepSel: true }); sound(); break;
       case 'down': edit(n => C.transpose(n, i, -1), { keepSel: true }); sound(); break;
+      case 'oct-up': edit(n => C.transpose(n, i, 12), { keepSel: true }); sound(); break;
+      case 'oct-down': edit(n => C.transpose(n, i, -12), { keepSel: true }); sound(); break;
       case 'split': edit(n => C.splitNote(n, i), { keepSel: true }); break;
       case 'merge': edit(n => C.mergeNext(n, i), { keepSel: true }); break;
       case 'delete': edit(n => C.deleteNote(n, i)); break;
@@ -319,6 +332,24 @@ function bind() {
   app.querySelectorAll('[data-len]').forEach(b => b.onclick = () => edit(n => C.setBeats(n, view.sel, Number(b.dataset.len)), { keepSel: true }));
   const per = $('select[name=perBar]', app);
   per.onchange = () => { view.perBar = Number(per.value); };
+  // keyboard: tap a key to set the selected note's pitch
+  const partMidis = view.notes.map(n => n[0]);
+  const [lo, hi] = rangeFor([...partMidis, Math.min(...partMidis) - 3, Math.max(...partMidis) + 3], 12);
+  const kbHost = $('.fix-kb', app);
+  view.kb = mountKeyboard(kbHost, {
+    lo, hi, tonic: tag.tonic, labels: true,
+    onKey: m => {
+      audio.unlock(); audio.stopAll(); audio.playNote(m, 0.45);
+      const i = view.sel;
+      if (m === view.notes[i][0]) { if (view.advance !== false) { view.sel = Math.min(i + 1, view.range[1] - 1); render(); } return; }
+      edit(n => C.transpose(n, i, m - n[i][0]), { keepSel: true, then: () => { if (view.advance !== false) view.sel = Math.min(i + 1, view.range[1] - 1); } });
+    },
+  });
+  view.kb.hint(view.notes[view.sel][0]);
+  const kbWrap = kbHost.querySelector('.kb-wrap');
+  if (view.kbScroll != null) kbWrap.scrollLeft = view.kbScroll;
+  kbWrap.onscroll = () => { view.kbScroll = kbWrap.scrollLeft; };
+  $('input[name=advance]', app).onchange = e => { view.advance = e.target.checked; };
   const syl = $('input[name=syl]', app);
   syl.onchange = () => edit(n => C.setSyllable(n, view.sel, syl.value), { keepSel: true });
   const words = $('input[name=words]', app);
@@ -332,20 +363,27 @@ function bind() {
   const realBtn = (btn, start, end, alsoSynth) => {
     audio.unlock(); audio.stopAll();
     const label = btn.textContent;
-    let synthStarted = false;
+    let synthStarted = false, following = false;
     audio.playTrack(tag.tracks[view.part], start, end, err => { if (err) env.toast(err.message === 'blocked' ? 'The phone blocked playback — tap again' : 'The real recording needs a connection'); }, {
       onState: s => {
         btn.classList.toggle('loading', s === 'loading');
         btn.textContent = s === 'loading' ? '⏳ Loading…' : s === 'playing' ? '■ Stop' : label;
         btn.dataset.playing = s === 'playing' || s === 'loading' ? '1' : '';
         if (s === 'playing' && alsoSynth && !synthStarted) { synthStarted = true; setTimeout(() => audio.playNotes(phraseNotes()), 150); }
+        if (s === 'playing' && !following) { following = true; audio.followTrack(view.notes, i => highlight(i)); }
       },
     });
   };
   const ns = phraseNotes();
   const start = ns[0][1], last = ns[ns.length - 1], end = last[1] + last[2];
   const p = $('[data-act=play]', app);
-  if (p) p.onclick = () => { audio.unlock(); audio.stopAll(); audio.playNotes(ns, { onNote: k => highlight(view.range[0] + k) }); };
+  if (p) p.onclick = () => {
+    audio.unlock(); audio.stopAll();
+    const from = view.range[0];
+    const secs = audio.playNotes(ns, { onNote: k => highlight(from + k) });
+    clearTimeout(view.synthEnd);
+    view.synthEnd = setTimeout(() => { if (view) highlight(-1); }, secs * 1000 + 100);
+  };
   for (const [act, s, e, synth] of [['real', start, end, false], ['both', start, end, true], ['real-all', 0, null, false]]) {
     const b = $(`[data-act=${act}]`, app);
     if (b) b.onclick = () => (b.dataset.playing ? audio.stopAll() : realBtn(b, s, e, synth));
@@ -386,6 +424,18 @@ function bind() {
   };
 }
 
+/** Light up note i (index into the whole part; -1 = none) on the chips,
+ *  the staff and the keyboard, as the synth or the real singer reaches it. */
 function highlight(i) {
-  env.app.querySelectorAll('.nchip').forEach(b => b.classList.toggle('playing', Number(b.dataset.i) === i));
+  const app = env.app;
+  app.querySelectorAll('.nchip').forEach(b => b.classList.toggle('playing', Number(b.dataset.i) === i));
+  const [from, to] = view.range;
+  const tag = env.tag(view.id);
+  const wrap = app.querySelector('.ours .staff-wrap');
+  if (wrap && tag) {
+    const on = i >= from && i < to;
+    wrap.innerHTML = env.staffHtml(tag, view.part, view.notes.slice(from, to), { names: true, rhythm: true, highlight: on ? i - from : view.sel - from, force: true });
+    wrap.classList.toggle('live', on);
+  }
+  if (view.kb) view.kb.light(i >= 0 && view.notes[i] ? view.notes[i][0] : null);
 }

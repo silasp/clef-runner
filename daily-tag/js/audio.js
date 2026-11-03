@@ -235,6 +235,38 @@ export function playTrack(url, start = 0, end = null, onEnd, { onState } = {}) {
   setTimeout(() => { if (live() && !started && !finished) finish(new Error('offline')); }, 20000);
 }
 
+/** Seconds into the playing track, or null when nothing is playing. */
+export function trackTime() {
+  return trackEl && !trackEl.paused ? trackEl.currentTime : null;
+}
+
+/**
+ * Follow the playing track through notes [midi, start, dur]: calls
+ * onNote(index) when the sung note changes (-1 between notes) and
+ * onNote(-1) when playback stops. Returns a stop function.
+ */
+export function followTrack(notes, onNote) {
+  let cur = -2, seen = false;
+  const token = trackToken;
+  const tick = () => {
+    const t = token === trackToken ? trackTime() : null;
+    if (t == null) {
+      if (seen || !trackEl || token !== trackToken) { clearInterval(timer); if (cur !== -1) onNote(-1); }
+      return;
+    }
+    seen = true;
+    let i = -1;
+    for (let k = 0; k < notes.length; k++) {
+      const n = notes[k];
+      if (n[1] - 0.04 <= t && t < n[1] + n[2] + 0.06) { i = k; }
+      if (n[1] > t) break;
+    }
+    if (i !== cur) { cur = i; onNote(i); }
+  };
+  const timer = setInterval(tick, 50);
+  return () => { clearInterval(timer); };
+}
+
 export function stopTrack() {
   trackToken++;
   const cb = trackStateCb;

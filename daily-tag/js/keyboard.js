@@ -88,5 +88,11 @@ export function mountKeyboard(host, o) {
       if (k) { k.classList.add('hint'); k.scrollIntoView && k.scrollIntoView({ block: 'nearest', inline: 'center' }); }
     },
     clearHint() { for (const k of keys.values()) k.classList.remove('hint'); },
+    /** Light one key (e.g. the note being sung now) without scrolling; null clears. */
+    light(midi) {
+      for (const k of keys.values()) k.classList.remove('live');
+      const k = midi == null ? null : keys.get(midi);
+      if (k) k.classList.add('live');
+    },
   };
 }

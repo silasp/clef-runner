@@ -66,6 +66,22 @@ const flags = await page.evaluate(id => JSON.parse(localStorage.getItem('daily-t
 assert.equal(flags[0], '~');
 assert.equal(flags[1], '|');
 await page.click('[data-act=play]');      // synth copes with ties
+await page.waitForSelector('.nchip.playing', { timeout: 3000 });   // notes light up as they play
+
+// set pitches from the keyboard: tap a key, selection moves on
+await page.click('.nchip >> nth=2');
+const kbKey = await page.evaluate(() => {
+  const keys = [...document.querySelectorAll('.fix-kb [data-midi]')].map(k => Number(k.dataset.midi));
+  return keys[Math.floor(keys.length / 2)];
+});
+await page.click(`.fix-kb [data-midi="${kbKey}"]`);
+const after = await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes[2][0], id);
+assert.equal(after, kbKey, 'keyboard sets the pitch');
+assert.equal(await page.getAttribute('.nchip.sel', 'data-i'), '3', 'then moves to the next note');
+await page.click('.nchip >> nth=2');
+await page.click('[data-op=oct-up]');
+assert.equal(await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes[2][0], id), kbKey + 12);
+await page.click('[data-op=undo]');
 await shot('r3-edited');
 
 // the fix is live on this device, before submitting
