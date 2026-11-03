@@ -143,30 +143,94 @@ export function sfx(kind) {
   }
 }
 
-/** Stream a section of the real learning track (needs network). */
-export function playTrack(url, start = 0, end = null, onEnd) {
-  stopTrack();
-  trackEl = new Audio();
-  trackEl.preload = 'auto';
-  trackEl.src = url;
-  const begin = () => {
-    try { trackEl.currentTime = Math.max(0, start - 0.15); } catch (e) { /* not seekable yet */ }
-    trackEl.play().catch(() => onEnd && onEnd(new Error('blocked')));
-    if (end != null) {
-      clearInterval(trackTimer);
-      trackTimer = setInterval(() => {
-        if (!trackEl || trackEl.currentTime >= end + 0.25) { stopTrack(); onEnd && onEnd(); }
-      }, 100);
+// Real learning tracks: one <audio> element per URL, kept so replays are instant.
+const trackCache = new Map();
+let trackToken = 0;
+let trackStateCb = null;
+
+function trackFor(url) {
+  let el = trackCache.get(url);
+  if (!el) {
+    el = new Audio();
+    el.preload = 'auto';
+    el.src = url;
+    trackCache.set(url, el);
+    if (trackCache.size > 6) {                 // keep memory small on old phones
+      const [oldUrl, old] = trackCache.entries().next().value;
+      if (old !== trackEl) { old.removeAttribute('src'); old.load(); }
+      trackCache.delete(oldUrl);
     }
+  }
+  return el;
+}
+
+/** Start downloading a track ahead of time (e.g. when a phrase is shown). */
+export function preloadTrack(url) {
+  if (url) trackFor(url);
+}
+
+export function trackReady(url) {
+  const el = trackCache.get(url);
+  return !!el && el.readyState >= 3;
+}
+
+/**
+ * Stream a section of the real learning track (needs network).
+ * Call from a tap: play() starts inside the gesture (iOS), muted until
+ * the seek to `start` lands. onState('loading' | 'playing' | 'ended' | 'error').
+ */
+export function playTrack(url, start = 0, end = null, onEnd, { onState } = {}) {
+  stopTrack();
+  const el = trackFor(url);
+  const token = ++trackToken;
+  trackEl = el;
+  trackStateCb = onState || null;
+  const live = () => token === trackToken;
+  const state = s => { if (live() && onState) onState(s); };
+  let finished = false;
+  const finish = err => {
+    if (finished) return;
+    finished = true;
+    if (live()) { clearInterval(trackTimer); try { el.pause(); } catch (e) { /* ignore */ } trackEl = null; trackStateCb = null; }
+    if (onState) onState(err ? 'error' : 'ended');
+    if (onEnd) onEnd(err);
   };
-  trackEl.addEventListener('loadedmetadata', begin, { once: true });
-  trackEl.addEventListener('error', () => onEnd && onEnd(new Error('offline')), { once: true });
-  trackEl.load();
+  const target = Math.max(0, start - 0.15);
+  const seek = () => {
+    if (!live()) return;
+    try { el.currentTime = target; } catch (e) { /* not seekable yet */ }
+  };
+  el.muted = true;
+  state(el.readyState >= 3 ? 'playing' : 'loading');
+  if (el.readyState >= 1) seek(); else el.addEventListener('loadedmetadata', seek, { once: true });
+  const onPlaying = () => {
+    if (!live()) return;
+    if (Math.abs(el.currentTime - target) > 0.4) { seek(); return; }
+    el.muted = false;
+    state('playing');
+  };
+  el.addEventListener('playing', onPlaying);
+  el.addEventListener('seeked', onPlaying);
+  el.addEventListener('error', () => live() && finish(new Error('offline')), { once: true });
+  el.addEventListener('ended', () => live() && finish(), { once: true });
+  const p = el.play();
+  if (p && p.catch) p.catch(() => live() && finish(new Error('blocked')));
+  clearInterval(trackTimer);
+  trackTimer = setInterval(() => {
+    if (!live()) { clearInterval(trackTimer); el.removeEventListener('playing', onPlaying); el.removeEventListener('seeked', onPlaying); return; }
+    if (!el.muted && end != null && el.currentTime >= end + 0.25) finish();
+  }, 100);
+  // after 20 s with nothing, give up
+  setTimeout(() => { if (live() && el.muted && !finished) finish(new Error('offline')); }, 20000);
 }
 
 export function stopTrack() {
+  trackToken++;
+  const cb = trackStateCb;
+  trackStateCb = null;
+  if (cb) cb('ended');
   clearInterval(trackTimer);
-  if (trackEl) { try { trackEl.pause(); } catch (e) { /* ignore */ } trackEl = null; }
+  if (trackEl) { try { trackEl.pause(); trackEl.muted = true; } catch (e) { /* ignore */ } trackEl = null; }
 }
 
 export function context() { return ctx; }

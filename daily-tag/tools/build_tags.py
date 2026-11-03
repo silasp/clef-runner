@@ -74,11 +74,22 @@ def align(a, b):
     return len(pairs) / m, pairs[::-1]
 
 
+def part_agreement(a, b):
+    """Recall of the sheet's notes b in the audio a, discounted when the
+    audio has many notes the sheet lacks. Without the precision term a
+    degenerate sheet (e.g. one repeated pitch) "matches" any recording."""
+    if len(b) < 2:
+        return 0.0
+    recall, pairs = align(a, b)
+    precision = len(pairs) / max(1, len(a))
+    return recall * min(1.0, 0.4 + 1.2 * precision)
+
+
 def agreement(audio, sheet):
     """Best transposition and per-part recall of the sheet's notes in the audio."""
     best = None
     for sh in range(-7, 8):
-        sc = {p: align(collapse([n[0] for n in audio[p]]), collapse([n[0] + sh for n in sheet[p]]))[0] for p in PARTS}
+        sc = {p: part_agreement(collapse([n[0] for n in audio[p]]), collapse([n[0] + sh for n in sheet[p]])) for p in PARTS}
         mean = float(np.mean(list(sc.values())))
         if best is None or mean > best[0]:
             best = (mean, sh, sc)

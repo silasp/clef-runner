@@ -18,6 +18,13 @@ def test_no_words_means_no_syllables():
     assert B.word_times('', [['x', 0, 1]]) is None
 
 
+def test_degenerate_sheet_does_not_match():
+    audio = [60, 64, 62, 64, 62, 60, 59, 57, 60, 65]
+    assert B.part_agreement(audio, [64]) == 0.0           # one repeated pitch
+    assert B.part_agreement(audio, [60, 64]) < 0.7        # two notes found among ten
+    assert B.part_agreement(audio, audio) == 1.0
+
+
 def test_rhythm_quantisation():
     assert B.quantise_beats(1.05) == 1 and B.quantise_beats(0.48) == 0.5 and B.quantise_beats(3.3) == 3
     parts = {p: [[60, i * 0.5, 0.45] for i in range(8)] + [[60, 4.0, 2.0]] for p in B.PARTS}

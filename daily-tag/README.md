@@ -24,6 +24,16 @@ No build step and no dependencies. It's plain HTML, CSS and ES modules, and runs
   * Rhythm comes from the sheet music wherever the recording matches it. Otherwise it's quantised from the recording at an estimated tempo.
   * Tags are sung freely, with holds and swells, so treat rhythm from recordings as approximate.
 
+## Check & fix the tags
+
+The notes and words are machine-transcribed, so some are wrong. **🔍 Check tags** (home screen footer, any tag page, or *✎ Wrong notes or words?* while meeting a phrase) opens a review screen:
+
+* **Side by side:** our notes with rhythm and syllables, the original sheet music, and the real singer. *▶ Both* plays our version over the recording, so wrong notes stand out.
+* **Quick fixes:** tap a note, then ▲▼ a semitone, ✂ split it into repeated notes (“honk honk”), ⊕ merge, or 🗑 delete it. Type the words for a phrase (“honk honk beep beep”, “lo-ving”, “_” to hold a syllable) and they're laid over the notes in order.
+* **✓ Correct** marks a part as checked; 🚩 hides a tag that's beyond repair.
+* Fixes apply on your phone at once. **Submit** opens a prefilled GitHub issue on this repo. When the repo owner or a collaborator files it, the `apply-corrections` workflow merges it into `data/corrections.json`, commits, and closes the issue. The app applies `corrections.json` on top of the generated `tags.json`, so fixes survive data rebuilds.
+* PDF sheets are pre-rendered to `sheets/<id>.png` (`tools/sheet_images.sh`), because iOS can't show a PDF inside a page.
+
 ## Memory techniques built in
 
 | Technique | How it shows up |
@@ -88,6 +98,7 @@ Deep link for practice: `#drill/<exercise>/<tagId>/<Part>/<phrase|all>`, e.g. `#
 npm test               # unit tests (node:test) — music theory, YIN, scoring, SRS, curriculum, lessons, game, notation, data integrity
 npm run serve &        # then, with Playwright available:
 npm run test:e2e       # completes a whole lesson in silent mode at 320×568, checks persistence and that the page has no horizontal overflow
+node tests/e2e/review.mjs               # review screen: edit notes and words, reload, submit, hide
 node tests/e2e/sing.mjs 0 Lead          # synthesises a sung phrase into Chromium's fake mic → must score ≥ 80 %
 WRONG=1 node tests/e2e/sing.mjs 0 Lead  # the same phrase a minor third off → must fail
 ```
@@ -113,7 +124,7 @@ Every tag gets **two independent transcriptions**, and they check each other.
 * [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes each recovered voice with word timestamps, primed with the tag's lyrics.
 * Recognised words are aligned to the real lyric text, so mishearings don't matter much, and hyphenated with pyphen.
 * A small dynamic programme then starts each word on its own note as close as possible to when it was sung. The notes up to the next word carry the rest of its syllables, then the melisma.
-* Parts without their own recognition yet borrow the Lead's word timing.
+* Every part is recognised from its own recovered voice.
 
 **4. Assemble** (`tools/build_tags.py`), from the 761 most-downloaded four-part tags that have per-part learning tracks:
 

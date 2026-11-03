@@ -11,12 +11,18 @@ import { mountKeyboard, rangeFor } from './keyboard.js';
 import { framesToNotes, alignPitches, lyricMatch, combineScores } from './scoring.js';
 import * as audio from './audio.js';
 import { listen, hasMic, hasSpeech } from './mic.js';
+import { applyCorrections, mergeStores, pruneLocal, loadLocal, saveLocal, pending } from './corrections.js';
+import { initReview, showReview, showReviewQueue, setReviewBack } from './review.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const app = document.getElementById('app');
 let state = load();
 let TAGS = [];
 let BY_ID = {};
+let RAW_BY_ID = {};         // tags as generated, before corrections
+let RAW = [];
+let REMOTE_FIXES = {};      // data/corrections.json
+let LOCAL_FIXES = loadLocal();  // this device's edits, until they reach the repo
 let WORD_POOL = [];
 let lesson = null;
 
@@ -28,11 +34,17 @@ const caps = () => capabilities(state, Date.now(), { hasMic: hasMic(), hasAudio:
 // ---------------------------------------------------------------- boot
 async function boot() {
   try {
-    const res = await fetch('data/tags.json');
+    const [res, fixes] = await Promise.all([
+      fetch('data/tags.json'),
+      fetch('data/corrections.json').then(r => (r.ok ? r.json() : {})).catch(() => ({})),
+    ]);
     const raw = await res.json();
-    TAGS = prepareTags(raw.tags);
-    BY_ID = Object.fromEntries(TAGS.map(t => [t.id, t]));
-    WORD_POOL = [...new Set(TAGS.flatMap(t => (t.lyrics || '').split(/\s+/)))];
+    RAW = raw.tags;
+    RAW_BY_ID = Object.fromEntries(RAW.map(t => [String(t.id), t]));
+    REMOTE_FIXES = fixes || {};
+    pruneLocal(LOCAL_FIXES, REMOTE_FIXES);
+    saveLocal(LOCAL_FIXES);
+    rebuildTags();
   } catch (e) {
     app.innerHTML = `<div class="screen"><p class="err">Couldn't load the tag library. ${esc(e.message)}</p></div>`;
     return;
@@ -46,12 +58,33 @@ async function boot() {
   }
 }
 
+/** Apply corrections (repo + this device) and prepare the library. */
+function rebuildTags() {
+  TAGS = prepareTags(applyCorrections(RAW, mergeStores(REMOTE_FIXES, LOCAL_FIXES)));
+  BY_ID = Object.fromEntries(TAGS.map(t => [t.id, t]));
+  WORD_POOL = [...new Set(TAGS.flatMap(t => (t.lyrics || '').split(/\s+/)))];
+}
+
+initReview({
+  app, esc, toast, topBar,
+  staffHtml: (...a) => staffHtml(...a),
+  raw: id => RAW_BY_ID[String(id)],
+  tag: id => BY_ID[String(id)],
+  tags: () => TAGS,
+  startedTags: () => [...new Set(Object.keys(state.cards).map(k => k.split('/')[0]))],
+  store: () => LOCAL_FIXES,
+  remote: () => REMOTE_FIXES,
+  save: ({ rebuild = false } = {}) => { saveLocal(LOCAL_FIXES); if (rebuild) rebuildTags(); },
+});
+
 function route() {
   audio.stopAll();
   const h = location.hash.slice(1);
   if (h.startsWith('tag/')) return showTag(h.slice(4));
   if (h === 'settings') return showSettings();
   if (h === 'badges') return showBadges();
+  if (h === 'review') { setReviewBack(null); return showReviewQueue(); }
+  if (h.startsWith('review/')) return showReview(h.slice(7));
   if (h === 'lesson' && lesson) return renderExercise();
   if (h.startsWith('drill/')) return startDrill(h.slice(6));
   return showHome();
@@ -155,6 +188,7 @@ function showHome() {
     </section>
     <footer class="foot muted small">
       <a href="#badges">🏅 Badges (${state.badges.length}/${BADGES.length})</a> ·
+      <a href="#review">🔍 Check tags${pending(LOCAL_FIXES, REMOTE_FIXES).length ? ` (${pending(LOCAL_FIXES, REMOTE_FIXES).length} unsent)` : ''}</a> ·
       Tags, lyrics & learning tracks from <a href="https://www.barbershoptags.com" target="_blank" rel="noopener">barbershoptags.com</a>
     </footer>
   </main>`;
@@ -194,9 +228,11 @@ function showTag(id) {
       ${tag.sheet ? `<a href="${esc(tag.sheet)}" target="_blank" rel="noopener">📄 Sheet music</a> · ` : ''}
       <a href="${esc(tag.page)}" target="_blank" rel="noopener">barbershoptags.com page</a>
       ${tag.credit ? `<div class="muted">Learning tracks: ${esc(tag.credit)}</div>` : ''}
-      <div class="muted">${SOURCE_NOTE[tag.source] || SOURCE_NOTE.audio}</div>
+      <div class="muted">${SOURCE_NOTE[tag.source] || SOURCE_NOTE.audio}${tag.corrected ? ' Includes corrections by singers.' : ''}${tag.checked && Object.keys(tag.checked).length ? ` Checked by a singer: ${Object.keys(tag.checked).join(', ')}.` : ''}</div>
     </div>
+    <button class="check-btn" data-act="review">🔍 Check &amp; fix this tag</button>
   </main>`;
+  $('[data-act=review]').onclick = () => { setReviewBack('tag/' + tag.id); location.hash = `review/${tag.id}/Lead/0`; };
   app.querySelectorAll('[data-learn]').forEach(b => b.onclick = () => { audio.unlock(); startLesson({ tagId: tag.id, part: b.dataset.learn }); });
   app.querySelectorAll('[data-play]').forEach(b => b.onclick = () => {
     audio.stopAll();
@@ -204,10 +240,7 @@ function showTag(id) {
     const others = Object.fromEntries(PARTS.filter(x => x !== p).map(x => [x, tag.parts[x]]));
     audio.playNotes(tag.parts[p], { others });
   });
-  app.querySelectorAll('[data-track]').forEach(b => b.onclick = () => {
-    audio.stopAll();
-    audio.playTrack(tag.tracks[b.dataset.track], 0, null, err => { if (err) toast('Recording needs a connection'); });
-  });
+  app.querySelectorAll('[data-track]').forEach(b => b.onclick = () => trackButton(b, tag.tracks[b.dataset.track], 0, null));
 }
 
 const SOURCE_NOTE = {
@@ -316,6 +349,7 @@ function startDrill(spec) {
 
 function exerciseContext(ex) {
   const tag = BY_ID[ex.tagId];
+  if (ex.phrase !== 'all' && ex.phrase >= tag.phrases[ex.part].length) ex.phrase = tag.phrases[ex.part].length - 1;
   const notes = itemNotes(tag, ex.part, ex.phrase);
   const card = ensureCard(state.cards, ex.cardId);
   return { tag, notes, card };
@@ -332,6 +366,7 @@ function renderExercise() {
   audio.stopAll();
   const ex = lesson.exercises[lesson.i];
   if (!ex) return finishLesson();
+  if (!BY_ID[ex.tagId]) { lesson.i++; return renderExercise(); }   // tag hidden by a correction
   const { tag, notes, card } = exerciseContext(ex);
   const cue = cueFor(ex, card);
   const pct = Math.round(lesson.i / lesson.exercises.length * 100);
@@ -345,11 +380,14 @@ function renderExercise() {
       <div class="skips">
         ${ex.type === 'sing' ? '<button class="link" data-act="skip-sing">🤐 Can\'t sing now</button>' : ''}
         ${needsListen && ex.type !== 'intro' ? '<button class="link" data-act="skip-listen">🔇 Can\'t listen now</button>' : ''}
+        ${ex.type === 'intro' || ex.type === 'guided' ? '<button class="link" data-act="fix">✎ Wrong notes or words?</button>' : ''}
         <button class="link" data-act="skip">Skip</button>
       </div>
       <div class="feedback" hidden></div>
     </div>
   </main>`;
+  const fix = $('[data-act=fix]');
+  if (fix) fix.onclick = () => { setReviewBack('lesson'); location.hash = `review/${tag.id}/${ex.part}/${ex.phrase}`; };
   $('[data-act=quit]').onclick = () => { if (confirm('Quit this lesson? Progress so far is kept.')) { lesson = null; location.hash = ''; } };
   $('[data-act=skip]').onclick = () => next();
   const sl = $('[data-act=skip-listen]');
@@ -449,7 +487,7 @@ function staffHtml(tag, part, notes, opts = {}) {
   return rows.map(start => {
     const slice = notes.slice(start, start + 10);
     const sub = arr => arr ? arr.slice(start, start + 10) : undefined;
-    const rhythm = state.settings.rhythm === 'always' || (state.settings.rhythm !== 'never' && !!opts.rhythm);
+    const rhythm = !!opts.force || state.settings.rhythm === 'always' || (state.settings.rhythm !== 'never' && !!opts.rhythm);
     return renderStaff(slice, {
       part, tonic: tag.tonic, names, labels: sub(labels), mask: sub(opts.mask), hits: sub(opts.hits),
       highlight: opts.highlight != null ? opts.highlight - start : -1, width: 340,
@@ -478,11 +516,27 @@ function bindPlay(root, tag, ex, notes, onNote) {
     audio.playNotes(notes, { others, onNote });
   };
   const tr = root.querySelector('[data-act=play-track]');
-  if (tr) tr.onclick = () => {
-    audio.stopAll();
-    const start = notes[0][1], last = notes[notes.length - 1];
-    audio.playTrack(tag.tracks[ex.part], start, last[1] + last[2], err => { if (err) toast('Real recording needs a connection'); });
-  };
+  if (tr) {
+    audio.preloadTrack(tag.tracks[ex.part]);
+    tr.onclick = () => {
+      const start = notes[0][1], last = notes[notes.length - 1];
+      trackButton(tr, tag.tracks[ex.part], start, last[1] + last[2]);
+    };
+  }
+}
+
+/** Play (or stop) a real recording from a button, showing loading progress. */
+function trackButton(btn, url, start, end) {
+  if (btn.dataset.playing) { audio.stopAll(); return; }
+  audio.stopAll();
+  const label = btn.innerHTML;
+  audio.playTrack(url, start, end, err => { if (err) toast('The real recording needs a connection'); }, {
+    onState: s => {
+      btn.classList.toggle('loading', s === 'loading');
+      btn.dataset.playing = s === 'loading' || s === 'playing' ? '1' : '';
+      btn.innerHTML = s === 'loading' ? '<span class="spin"></span> Loading…' : s === 'playing' ? '■ Stop' : label;
+    },
+  });
 }
 
 const RENDER = {

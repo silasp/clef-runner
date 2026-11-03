@@ -1,11 +1,11 @@
 // Offline cache for the app shell + tag data. Learning-track audio is
 // streamed from barbershoptags.com and not cached.
-const CACHE = 'daily-tag-v1';
+const CACHE = 'daily-tag-v2';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png',
-  'data/tags.json',
+  'data/tags.json', 'data/corrections.json',
   'js/app.js', 'js/audio.js', 'js/curriculum.js', 'js/game.js', 'js/keyboard.js', 'js/lesson.js',
-  'js/mic.js', 'js/music.js', 'js/notation.js', 'js/pitch.js', 'js/scoring.js', 'js/srs.js', 'js/store.js',
+  'js/mic.js', 'js/music.js', 'js/notation.js', 'js/pitch.js', 'js/scoring.js', 'js/srs.js', 'js/store.js', 'js/corrections.js', 'js/review.js',
 ];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

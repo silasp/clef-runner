@@ -1,0 +1,56 @@
+name: apply-corrections
+# Issues opened from the app's review screen carry a JSON block of tag
+# corrections. For the repo owner and collaborators, merge them into
+# data/corrections.json, commit, and close the issue.
+on:
+  issues:
+    types: [opened, edited]
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: corrections
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: >-
+      contains(github.event.issue.body, 'daily-tag-corrections') &&
+      github.event.issue.state == 'open' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Merge into data/corrections.json
+        id: apply
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          node tools/apply_corrections.mjs > summary.txt
+          cat summary.txt
+      - name: Commit
+        env:
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/corrections.json
+          if git diff --cached --quiet; then echo "No change"; exit 0; fi
+          git commit -m "Tag corrections from #$NUMBER" -m "$(cat summary.txt)"
+          for i in 1 2 3; do git pull --rebase && git push && exit 0; sleep 5; done
+          exit 1
+      - name: Close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "Applied ✅ $(cat summary.txt) — live once GitHub Pages redeploys (about a minute)."
+          gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY"
+      - name: Report a failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "Couldn't apply these corrections — see the workflow run log ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
