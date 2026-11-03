@@ -85,9 +85,13 @@ def agreement(audio, sheet):
     return best
 
 
-def plausible(parts):
+def plausible(parts, slack=2):
     if any(len(parts[p]) < 2 for p in PARTS):
         return False
+    for p in PARTS:                       # every note inside the voice's range
+        lo, hi = RANGE[p]
+        if any(not lo - slack <= n[0] <= hi + slack for n in parts[p]):
+            return False
     med = {p: float(np.median([n[0] for n in parts[p]])) for p in PARTS}
     return med['Bass'] <= min(med['Bari'], med['Lead']) and med['Tenor'] >= med['Lead'] - 2
 
@@ -354,7 +358,9 @@ def decide(t, work, a):
         if audio_ok:
             return audio, 'audio', info
         if sc['Lead'] >= 0.6:                 # the sheet matches the recording's melody
-            return sheet_times(sheet, audio['Lead'], shift), 'sheet', info
+            timed = sheet_times(sheet, audio['Lead'], shift)
+            if plausible(timed):
+                return timed, 'sheet', info
         return None, 'sources disagree', info
     if audio_ok:
         return audio, 'audio', info
