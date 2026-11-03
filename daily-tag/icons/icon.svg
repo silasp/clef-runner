@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#1b2a4a"/>
+  <g transform="translate(256 256)">
+    <rect x="-70" y="-190" width="140" height="380" rx="70" fill="#f7f3ea"/>
+    <clipPath id="c"><rect x="-70" y="-190" width="140" height="380" rx="70"/></clipPath>
+    <g clip-path="url(#c)">
+      <g fill="#d6332f">
+        <rect x="-120" y="-260" width="44" height="560" transform="rotate(30)"/>
+        <rect x="-10" y="-260" width="44" height="560" transform="rotate(30)"/>
+        <rect x="100" y="-260" width="44" height="560" transform="rotate(30)"/>
+      </g>
+      <g fill="#2f6fd6">
+        <rect x="-65" y="-260" width="22" height="560" transform="rotate(30)"/>
+        <rect x="45" y="-260" width="22" height="560" transform="rotate(30)"/>
+      </g>
+    </g>
+    <rect x="-90" y="-214" width="180" height="34" rx="17" fill="#f2b632"/>
+    <rect x="-90" y="180" width="180" height="34" rx="17" fill="#f2b632"/>
+  </g>
+</svg>

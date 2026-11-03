@@ -1,0 +1,13 @@
+{
+  "name": "daily-tag",
+  "version": "1.0.0",
+  "description": "Memorise barbershop tags (all four parts) a few minutes a day — Duolingo-style.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "test:e2e": "node tests/e2e/smoke.mjs",
+    "serve": "python3 -m http.server 8080"
+  },
+  "license": "MIT"
+}
