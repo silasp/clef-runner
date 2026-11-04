@@ -15,6 +15,8 @@ const LENGTHS = [
   [1.5, 'dotted quarter'], [2, 'half'], [3, 'dotted half'], [4, 'whole'],
 ];
 
+const REST_ICON = '<svg viewBox="0 0 14 30" width="10" height="22" aria-hidden="true" class="len-ico"><path d="M5 3 l5 7 l-5 6 l5 6 q-7 -2 -4 6" class="fl"/></svg>';
+
 /** A small note-value icon (head, stem, flags, dot). */
 function lengthIcon(beats) {
   const g = rhythmGlyph(beats);
@@ -52,7 +54,7 @@ function ranges(notes) {
 
 function partNotes(id, part) {
   const t = env.tag(id);
-  return t ? t.parts[part].map(n => [...n]) : [];
+  return t ? (t.written || t.parts)[part].map(n => [...n]) : [];
 }
 
 function entryFor(id) { return env.store()[id]; }
@@ -214,18 +216,19 @@ function render() {
         <h2>Fix</h2>
         <div class="chips">${notes.map((n, k) => {
           const i = from + k;
-          return `<button class="nchip ${i === sel ? 'sel' : ''}" data-i="${i}"><b>${noteName(n[0], tag.tonic)}</b><span>${esc(n[4] || (k ? '–' : ''))}</span></button>`;
+          return `<button class="nchip ${i === sel ? 'sel' : ''}" data-i="${i}">${C.isRest(n) ? `<b class="rest">rest</b><span></span>` : `<b>${noteName(n[0], tag.tonic)}</b><span>${esc(n[4] || (k ? '–' : ''))}</span>`}</button>`;
         }).join('')}</div>
         <div class="edit-bar" aria-label="Edit the selected note">
           <button class="sm" data-op="down" title="Semitone down">▼</button>
           <button class="sm" data-op="up" title="Semitone up">▲</button>
           <button class="sm" data-op="split" title="Split into two repeated notes">✂ Split</button>
           <button class="sm" data-op="merge" title="Merge with the next note" ${sel < view.notes.length - 1 ? '' : 'disabled'}>⊕ Merge</button>
+          <button class="sm ${C.isRest(selNote) ? 'on' : ''}" data-op="rest" title="${C.isRest(selNote) ? 'Turn this rest back into a note' : 'Turn this note into a rest'}" ${C.isRest(selNote) || view.notes.filter(n => !C.isRest(n)).length > 2 ? '' : 'disabled'}>${C.isRest(selNote) ? `${lengthIcon(1)} Make note` : `${REST_ICON} Make rest`}</button>
           <button class="sm" data-op="delete" title="Delete note" ${view.notes.length > 1 ? '' : 'disabled'}>🗑</button>
           <button class="sm" data-op="undo" ${view.undo.length ? '' : 'disabled'}>↶ Undo</button>
         </div>
         <div class="pitch-row">
-          <span class="muted small">Tap a key to set <b>${noteName(selNote[0], tag.tonic)}</b>'s pitch</span>
+          <span class="muted small">${C.isRest(selNote) ? 'Tap a key to turn this rest into a note' : `Tap a key to set <b>${noteName(selNote[0], tag.tonic)}</b>'s pitch`}</span>
           <label class="check small"><input type="checkbox" name="advance" ${view.advance === false ? '' : 'checked'}> then next note</label>
         </div>
         <div class="kb-host fix-kb"></div>
@@ -321,6 +324,7 @@ function bind() {
       case 'delete': edit(n => C.deleteNote(n, i)); break;
       case 'bar': edit(n => C.toggleFlag(n, i, '|'), { keepSel: true }); break;
       case 'tie': edit(n => C.toggleFlag(n, i, '~'), { keepSel: true }); break;
+      case 'rest': edit(n => C.toggleRest(n, i), { keepSel: true }); if (!C.isRest(view.notes[i])) sound(); break;
       case 'autobar': edit(n => C.autoBars(n, i, view.perBar || 4), { keepSel: true }); break;
       case 'undo': {
         const u = view.undo.pop();
@@ -341,11 +345,11 @@ function bind() {
     onKey: m => {
       audio.unlock(); audio.stopAll(); audio.playNote(m, 0.45);
       const i = view.sel;
-      if (m === view.notes[i][0]) { if (view.advance !== false) { view.sel = Math.min(i + 1, view.range[1] - 1); render(); } return; }
-      edit(n => C.transpose(n, i, m - n[i][0]), { keepSel: true, then: () => { if (view.advance !== false) view.sel = Math.min(i + 1, view.range[1] - 1); } });
+      if (m === view.notes[i][0] && !C.isRest(view.notes[i])) { if (view.advance !== false) { view.sel = Math.min(i + 1, view.range[1] - 1); render(); } return; }
+      edit(n => C.setPitch(n, i, m), { keepSel: true, then: () => { if (view.advance !== false) view.sel = Math.min(i + 1, view.range[1] - 1); } });
     },
   });
-  view.kb.hint(view.notes[view.sel][0]);
+  if (C.isRest(view.notes[view.sel])) view.kb.clearHint(); else view.kb.hint(view.notes[view.sel][0]);
   const kbWrap = kbHost.querySelector('.kb-wrap');
   if (view.kbScroll != null) kbWrap.scrollLeft = view.kbScroll;
   kbWrap.onscroll = () => { view.kbScroll = kbWrap.scrollLeft; };

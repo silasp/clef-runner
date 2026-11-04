@@ -87,7 +87,8 @@ export function playNotes(notes, o = {}) {
     if (tiedOn(i) && !even) timeline[i - 1][2] = Math.max(timeline[i - 1][2], timeline[i][1] + timeline[i][2] - timeline[i - 1][1]);
   }
   timeline.forEach(([m, s, d], i) => {
-    if (!tiedOn(i) || even) voice(m, t0 + s, d, 0.28);
+    const rest = typeof notes[i][5] === 'string' && notes[i][5].includes('r');
+    if (!rest && (!tiedOn(i) || even)) voice(m, t0 + s, d, 0.28);
     if (onNote) setTimeout(() => onNote(i), (s + 0.08) * 1000);
   });
   const end = timeline.length ? timeline[timeline.length - 1][1] + timeline[timeline.length - 1][2] : 0;

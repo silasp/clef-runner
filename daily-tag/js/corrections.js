@@ -7,7 +7,8 @@
 //
 // Shape:  { "<tagId>": { ts, hide?, comment?, parts: { "<Part>": { ok?, notes? } } } }
 // Notes:  [midi, start, dur, beats|null, syllable, flags?] — as in tags.json.
-//         flags: "|" = barline before this note, "~" = tied to the next note.
+//         flags: "|" = barline before this note, "~" = tied to the next note,
+//                "r" = a rest (keeps its pitch so it can turn back into a note).
 
 export const REPO = 'silas-dsc/daily-tag';
 export const MARKER = 'daily-tag-corrections';
@@ -31,7 +32,41 @@ function withFlag(n, f, on) {
   const next = on ? cur + f : cur;
   const out = n.slice(0, 5);
   while (out.length < 5) out.push(out.length === 3 ? null : '');
-  if (next) out.push(['|', '~'].filter(c => next.includes(c)).join(''));
+  if (next) out.push(['|', '~', 'r'].filter(c => next.includes(c)).join(''));
+  return out;
+}
+
+export const isRest = n => hasFlag(n, 'r');
+
+/** Turn note i into a rest, or a rest back into a note. A rest has no
+ *  syllable and no ties. Never leaves fewer than two sung notes. */
+export function toggleRest(notes, i) {
+  const out = clone(notes);
+  if (isRest(out[i])) { out[i] = withFlag(out[i], 'r', false); return out; }
+  if (out.filter(n => !isRest(n)).length <= 2) return out;
+  out[i] = withFlag(withFlag(out[i], 'r', true), '~', false);
+  out[i][4] = '';
+  if (i > 0) out[i - 1] = withFlag(out[i - 1], '~', false);
+  return out;
+}
+
+/** Set note i's pitch; a rest given a pitch becomes a note again. */
+export function setPitch(notes, i, midi) {
+  const out = clone(notes);
+  out[i][0] = Math.max(24, Math.min(96, midi));
+  if (isRest(out[i])) out[i] = withFlag(out[i], 'r', false);
+  return out;
+}
+
+/** The notes that are sung (rests removed). A rest's barline moves to the next note. */
+export function stripRests(notes) {
+  const out = [];
+  let bar = false;
+  for (const n of notes) {
+    if (isRest(n)) { bar = bar || hasFlag(n, '|'); continue; }
+    out.push(bar && out.length ? withFlag([...n], '|', true) : n);
+    bar = false;
+  }
   return out;
 }
 
@@ -72,6 +107,7 @@ export function setBeats(notes, i, beats) {
 /** Toggle a barline before note i, or a tie from note i to the next. */
 export function toggleFlag(notes, i, f) {
   const out = clone(notes);
+  if (f === '~' && (isRest(out[i]) || (out[i + 1] && isRest(out[i + 1])))) return out;
   out[i] = withFlag(out[i], f, !hasFlag(out[i], f));
   if (f === '~' && hasFlag(out[i], '~') && out[i + 1]) out[i + 1][4] = '';   // a tied note isn't re-sung
   return out;
@@ -133,7 +169,12 @@ export function layLyrics(notes, text, from = 0, to = notes.length) {
     parts.forEach((p, k) => tokens.push(k < parts.length - 1 || w.endsWith('-') ? p + '-' : p));
   }
   const out = clone(notes);
-  for (let i = from, k = 0; i < to; i++, k++) out[i][4] = k < tokens.length ? tokens[k] : '';
+  let k = 0;
+  for (let i = from; i < to; i++) {
+    if (isRest(out[i])) { out[i][4] = ''; continue; }   // rests carry no words
+    out[i][4] = k < tokens.length ? tokens[k] : '';
+    k++;
+  }
   return out;
 }
 
@@ -142,6 +183,7 @@ export function lyricText(notes, from = 0, to = notes.length) {
   const toks = [];
   let held = 0;
   for (let i = from; i < to; i++) {
+    if (isRest(notes[i])) continue;
     const s = notes[i][4] || '';
     if (!s) { held++; continue; }
     if (held) toks.push(...Array(held).fill('_'));
@@ -222,12 +264,13 @@ export function applyCorrections(rawTags, store) {
     if (!e) { out.push(t); continue; }
     if (e.hide) continue;
     const parts = { ...t.parts };
+    const written = { ...t.parts };     // with rests, for notation and the review screen
     const checked = {};
     for (const [p, c] of Object.entries(e.parts || {})) {
-      if (c.notes && c.notes.length) parts[p] = c.notes;
+      if (c.notes && c.notes.length && stripRests(c.notes).length >= 2) { written[p] = c.notes; parts[p] = stripRests(c.notes); }
       if (c.ok) checked[p] = true;
     }
-    out.push({ ...t, parts, checked, corrected: Object.values(e.parts || {}).some(c => c.notes) });
+    out.push({ ...t, parts, written, checked, corrected: Object.values(e.parts || {}).some(c => c.notes) });
   }
   return out;
 }
@@ -310,7 +353,7 @@ export function validate(payload) {
           const [m, s, d, b, syl, fl] = n;
           if (!Number.isInteger(m) || m < 24 || m > 96 || !(s >= 0) || !(d > 0)) throw new Error(`Bad note values in ${id} ${p}`);
           if (b != null && !(Number(b) > 0 && Number(b) <= 16)) throw new Error(`Bad note length in ${id} ${p}`);
-          if (fl != null && fl !== '' && !/^\|?~?$/.test(fl)) throw new Error(`Bad note flags in ${id} ${p}`);
+          if (fl != null && fl !== '' && !/^\|?~?r?$/.test(fl)) throw new Error(`Bad note flags in ${id} ${p}`);
           const v = [m, r2(s), r2(d), b == null ? null : Number(b), String(syl || '').slice(0, 40)];
           return fl ? [...v, fl] : v;
         });

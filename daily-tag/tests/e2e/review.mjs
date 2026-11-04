@@ -82,6 +82,18 @@ await page.click('.nchip >> nth=2');
 await page.click('[data-op=oct-up]');
 assert.equal(await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes[2][0], id), kbKey + 12);
 await page.click('[data-op=undo]');
+
+// rests: a note becomes a rest (drawn as one, silent, no words) and back
+await page.click('.nchip >> nth=3');
+await page.click('[data-op=rest]');
+assert.equal(await page.textContent('.nchip >> nth=3 >> b'), 'rest');
+assert.ok(await page.locator('.ours .st-rest').count() >= 1, 'rest drawn');
+const restNote = await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes[3], id);
+assert.match(restNote[5], /r/);
+await page.screenshot({ path: process.env.SHOTS ? `${process.env.SHOTS}/r4-rest.png` : '/dev/null' }).catch(() => {});
+await page.click('[data-op=rest]');
+assert.notEqual(await page.textContent('.nchip >> nth=3 >> b'), 'rest', 'and back to a note');
+await page.click('[data-op=rest]');   // leave it a rest: lessons must cope
 await shot('r3-edited');
 
 // the fix is live on this device, before submitting

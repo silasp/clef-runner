@@ -66,3 +66,10 @@ test('barlines and ties are drawn', async () => {
   assert.equal((svg.match(/st-tie/g) || []).length, 1);
   assert.equal((renderStaff([[60, 0, 1, 1, 'a', '|']]).match(/st-bar/g) || []).length, 0, 'no barline before the first note');
 });
+
+test('rests are drawn as rests, not noteheads', async () => {
+  const { renderStaff } = await import('../js/notation.js');
+  const svg = renderStaff([[60, 0, 1, 1, 'a'], [62, 1, 1, 1, '', 'r'], [64, 2, 2, 2, 'b', 'r'], [65, 4, 0.5, 0.5, '', 'r']], { rhythm: true, names: true });
+  assert.equal((svg.match(/<ellipse/g) || []).length, 1);
+  assert.equal((svg.match(/st-rest/g) || []).length >= 3, true);
+});

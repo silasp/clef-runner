@@ -325,3 +325,11 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 .pitch-row .check { display: flex; align-items: center; gap: 4px; }
 .fix-kb .kb-wrap { margin: 4px -8px 0; padding: 0 8px; }
 .fix-kb .kb { height: 110px; }
+.st-rest { fill: var(--ink); }
+.st-rest.line { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
+.st-rest.cur { fill: var(--accent-2); }
+.st-rest.line.cur { fill: none; stroke: var(--accent-2); }
+.staff-wrap.live .st-rest.cur { fill: var(--gold); }
+.nchip b.rest { font-weight: 600; font-style: italic; color: var(--muted); }
+.staff-wrap.live .st-rest.line.cur { fill: none; stroke: var(--gold); }
+.edit-bar .sm { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }

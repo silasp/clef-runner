@@ -32,6 +32,23 @@ function bottomLineStep(clef) {
 
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
+/** A rest of the given length, centred on the staff's middle line. */
+function restGlyph(x, midY, gap, beats, cur) {
+  const g = rhythmGlyph(beats);
+  const cls = `st-rest${cur ? ' cur' : ''}`;
+  let s = '';
+  if (g.beats >= 4) s = `<rect x="${x - 6}" y="${midY - gap}" width="12" height="${gap / 2}" class="${cls}"/>`;
+  else if (g.beats >= 2) s = `<rect x="${x - 6}" y="${midY - gap / 2}" width="12" height="${gap / 2}" class="${cls}"/>`;
+  else if (g.beats >= 1) s = `<path d="M${x - 2} ${midY - 12} l5 6 l-5 6 l5 6 q-7 -2 -3 6" class="${cls} line"/>`;
+  else {
+    const flags = g.flags || 1;
+    for (let f = 0; f < flags; f++) s += `<circle cx="${x - 3 - f}" cy="${midY - 5 + f * 6}" r="2" class="${cls}"/>`;
+    s += `<path d="M${x - 3} ${midY - 5} q4 1 5 -2 l-4 ${10 + (flags - 1) * 6}" class="${cls} line"/>`;
+  }
+  if (g.dot) s += `<circle cx="${x + 8}" cy="${midY - 2}" r="1.6" class="${cls}"/>`;
+  return s;
+}
+
 /** Glyph for a length in beats (quarter = 1): head, stem, flags, dot. */
 export function rhythmGlyph(beats) {
   const table = [
@@ -113,6 +130,11 @@ export function renderStaff(notes, o = {}) {
     const x = xs[i];
     const visible = !mask || mask[i];
     const syl = nt[4];
+    if (flag(nt, 'r')) {
+      s += restGlyph(x, midY, gap, rhythm ? nt[3] || 1 : 1, i === highlight);
+      lastSylX = null;   // a rest ends any held syllable
+      return;
+    }
     if (hasSyl) {
       if (syl) {
         s += `<text x="${x}" y="${sylY}" text-anchor="middle" class="st-syl">${esc(syl.replace(/-$/, ''))}</text>`;

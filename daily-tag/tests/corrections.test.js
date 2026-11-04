@@ -127,3 +127,27 @@ test('lengths, barlines and ties', async () => {
   assert.deepEqual(validate({ 1: { parts: { Lead: { notes: [[60, 0, 1, 1, 'a', '|~']] } } } })['1'].parts.Lead.notes[0], [60, 0, 1, 1, 'a', '|~']);
   assert.throws(() => validate({ 1: { parts: { Lead: { notes: [[60, 0, 1, 1, 'a', 'x']] } } } }), /flags/);
 });
+
+test('rests: toggle, keep pitch, skip words, stripped for learning', async () => {
+  const { toggleRest, isRest, setPitch, stripRests } = await import('../js/corrections.js');
+  const n = [[60, 0, 1, 1, 'a', '~'], [60, 1, 1, 1, ''], [62, 2, 1, 1, 'b', '|'], [64, 3, 1, 1, 'c']];
+  const r = toggleRest(n, 2);
+  assert.ok(isRest(r[2]));
+  assert.equal(r[2][0], 62, 'a rest keeps its pitch');
+  assert.equal(r[2][4], '', 'a rest has no syllable');
+  assert.equal(r[2][5], '|r', 'barline kept');
+  assert.ok(!isRest(toggleRest(r, 2)[2]), 'and turns back into a note');
+  const r1 = toggleRest(n, 1);
+  assert.equal(r1[0][5] || '', '', 'a tie into a rest is removed');
+  assert.equal(toggleRest(toggleRest(r, 3), 0)[0][5], '~', 'never fewer than two sung notes');
+  assert.ok(!isRest(setPitch(r, 2, 65)[2]) && setPitch(r, 2, 65)[2][0] === 65, 'a pitch makes it a note');
+  assert.deepEqual(layLyrics(r, 'x y z').map(x => x[4]), ['x', 'y', '', 'z']);
+  assert.equal(lyricText(layLyrics(r, 'x y z')), 'x y z');
+  const s = stripRests(r);
+  assert.equal(s.length, 3);
+  assert.equal(s[2][5], '|', "a rest's barline moves to the next note");
+  const out = applyCorrections([{ id: 9, parts: { Tenor: n, Lead: n, Bari: n, Bass: n } }], { 9: { ts: 1, parts: { Lead: { notes: r } } } });
+  assert.equal(out[0].parts.Lead.length, 3, 'learning sees sung notes only');
+  assert.equal(out[0].written.Lead.length, 4, 'notation keeps the rest');
+  assert.ok(validate({ 9: { parts: { Lead: { notes: r } } } }));
+});
