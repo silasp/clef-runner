@@ -178,6 +178,8 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 .st-note.cur { fill: var(--accent-2); stroke: var(--accent-2); }
 .st-note.hit { fill: var(--good); stroke: var(--good); }
 .st-note.miss { fill: var(--bad); stroke: var(--bad); }
+/* open noteheads (half, whole) stay open when coloured: only the outline changes */
+.st-note.held.cur, .st-note.held.hit, .st-note.held.miss { fill: var(--card); stroke-width: 2.4; }
 .st-acc { fill: var(--ink); font-size: 13px; }
 .st-syl { fill: var(--ink); font-size: 10.5px; font-style: italic; }
 .st-ext { stroke: var(--ink); stroke-width: 1; }
@@ -321,6 +323,7 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 .autobar select { font: inherit; font-size: 16px; padding: 6px; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
 .kw.live, .kb-black.live { background: var(--gold); box-shadow: inset 0 -8px 0 #b07d00; }
 .staff-wrap.live .st-note.cur { fill: var(--gold); stroke: var(--gold); }
+.staff-wrap.live .st-note.held.cur { fill: var(--card); }
 .pitch-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .pitch-row .check { display: flex; align-items: center; gap: 4px; }
 .fix-kb .kb-wrap { margin: 4px -8px 0; padding: 0 8px; }
