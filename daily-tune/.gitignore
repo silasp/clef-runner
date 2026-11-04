@@ -1,0 +1,7 @@
+node_modules/
+work/
+track_cache.json
+*.mp3
+.DS_Store
+__pycache__/
+*.pkl
