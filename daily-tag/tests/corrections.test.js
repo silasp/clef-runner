@@ -183,23 +183,26 @@ test('merging keeps other parts: a newer fix to one part never drops the rest', 
   assert.equal(older['5'].parts.Lead.notes[0][0], 60, 'older local fix loses to the repo');
 });
 
-test('trust: high-confidence tags, or all four parts confirmed by an approved fix', async () => {
-  const { isTrusted, pendingStore, applyCorrections } = await import('../js/corrections.js');
+test('learners see approved snapshots, else unedited high-confidence charts; approvals round-trip', async () => {
+  const { learnerTags, awaitingReview, buildApproval, parseApproval, versionOf } = await import('../js/corrections.js');
   const n = [[60, 0, 1, 1, 'a'], [62, 1, 1, 1, 'b']];
-  const low = { id: 7, confidence: 'low', parts: { Tenor: n, Lead: n, Bari: n, Bass: n } };
-  const high = { ...low, id: 8, confidence: 'high' };
-  const all = { 7: { ts: 1, parts: { Tenor: { ok: true }, Lead: { ok: true }, Bari: { ok: true }, Bass: { ok: true } } } };
-  const three = { 7: { ts: 1, parts: { Tenor: { ok: true }, Lead: { ok: true }, Bari: { ok: true } } } };
-  assert.equal(isTrusted(high, {}), true);
-  assert.equal(isTrusted(low, {}), false);
-  assert.equal(isTrusted(low, three), false, 'every part must be confirmed');
-  assert.equal(isTrusted(low, all), true);
-  // a fix on this device (store) doesn't make it trusted; only the approved store does
-  const out = applyCorrections([low], all, {});
-  assert.equal(out[0].trusted, false);
-  assert.equal(applyCorrections([low], {}, all)[0].trusted, true);
-  // pending submissions merge, newest first
-  const ps = pendingStore({ 3: { ts: 5, fixes: { 7: { ts: 1, parts: { Lead: { ok: true, notes: n } } } } },
-                            4: { ts: 9, fixes: { 7: { ts: 2, parts: { Bass: { ok: true } } } } } });
-  assert.deepEqual(Object.keys(ps['7'].parts).sort(), ['Bass', 'Lead']);
+  const fixed = [[64, 0, 1, 1, 'x'], [65, 1, 1, 1, 'y']];
+  const raw = [
+    { id: 1, confidence: 'high', parts: { Tenor: n, Lead: n, Bari: n, Bass: n } },
+    { id: 2, confidence: 'low', parts: { Tenor: n, Lead: n, Bari: n, Bass: n } },
+    { id: 3, confidence: 'low', parts: { Tenor: n, Lead: n, Bari: n, Bass: n } },
+    { id: 4, confidence: 'high', parts: { Tenor: n, Lead: n, Bari: n, Bass: n } },
+  ];
+  const approved = { 3: { version: 5, parts: { Tenor: fixed, Lead: fixed, Bari: fixed, Bass: fixed } }, 4: { version: 0, hide: true } };
+  const seen = learnerTags(raw, approved);
+  assert.deepEqual(seen.map(t => t.id), [1, 3], 'high shown, low hidden, approved shown, approved-as-hidden hidden');
+  assert.equal(seen[1].parts.Lead[0][0], 64, 'the approved snapshot, not the generated chart');
+  const remote = { 1: { ts: 9, parts: { Lead: { ok: true, notes: fixed } } }, 3: { ts: 5, parts: {} }, 2: { ts: 7, parts: {} } };
+  assert.deepEqual(awaitingReview(remote, approved).sort(), ['1', '2'], 'unapproved or changed since approval');
+  assert.equal(versionOf(1, remote), 9);
+  assert.equal(versionOf(8, remote), 0);
+  const a = buildApproval({ 3: 5, 8: 0 }, { 3: { title: 'Three' } });
+  assert.match(a.title, /Approve for learners: Three/);
+  assert.deepEqual(parseApproval(a.body), { 3: 5, 8: 0 });
+  assert.throws(() => parseApproval('nothing here'), /marker/);
 });

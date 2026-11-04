@@ -153,10 +153,21 @@ const body = decodeURIComponent(new URL(url).searchParams.get('body'));
 assert.match(body, /daily-tag-corrections/);
 assert.match(body, /Lead ✎/);
 
-// the corrected notes reach lessons too
+// unapproved edits don't reach lessons...
 await page.goto(BASE + `#drill/intro/${id}/Lead/0`);
 await page.waitForSelector('.ex-body .staff-wrap');
-assert.match(await page.textContent('.ex-body'), /w0/);
+assert.doesNotMatch(await page.textContent('.ex-body'), /w0/, 'learners only see approved charts');
+// ...unless the learner opts in to unreviewed charts
+await page.evaluate(() => {
+  const st = JSON.parse(localStorage.getItem('daily-tag:v1') || '{}');
+  st.settings = { ...(st.settings || {}), showUnverified: true };
+  localStorage.setItem('daily-tag:v1', JSON.stringify(st));
+});
+await page.goto(BASE + '#');
+await page.goto(BASE + `#drill/intro/${id}/Lead/0`);
+await page.reload();
+await page.waitForSelector('.ex-body .staff-wrap');
+assert.match(await page.textContent('.ex-body'), /w0/, 'opted in: the edit shows');
 assert.ok(await page.locator('[data-act=fix]').count(), 'lesson offers a fix link');
 await page.goto(BASE + `#drill/intro/${id}/Lead/all`);
 await page.waitForSelector('.ex-body .staff-wrap');

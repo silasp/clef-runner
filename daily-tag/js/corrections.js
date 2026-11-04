@@ -303,29 +303,76 @@ export function pruneLocal(local, remote) {
 }
 
 /** Apply corrections to raw tags (before prepareTags). Hidden tags are removed. */
-/** Is this tag trustworthy enough to show learners? High confidence from the build,
- *  or all four parts confirmed by a fix the maintainer approved (in `approved`,
- *  i.e. data/corrections.json — never a fix that only exists on someone's phone). */
-export function isTrusted(t, approved) {
-  if (t.confidence !== 'low') return true;
-  const e = approved && approved[String(t.id)];
-  return !!(e && !e.hide && ['Tenor', 'Lead', 'Bari', 'Bass'].every(p => e.parts && e.parts[p] && e.parts[p].ok));
+// ------------------------------------------------------------ review / approval
+export const APPROVAL_MARKER = 'daily-tag-approval';
+
+/** The version of a tag's chart in the repo: its fix's timestamp, 0 if never fixed. */
+export function versionOf(id, remote) {
+  const e = remote && remote[String(id)];
+  return e ? e.ts : 0;
 }
 
-/** All held (unreviewed) submissions in data/pending.json as one store, newest winning. */
-export function pendingStore(pending) {
-  let out = {};
-  for (const sub of Object.values(pending || {}).sort((a, b) => (a.ts || 0) - (b.ts || 0))) {
-    const stamped = Object.fromEntries(Object.entries(sub.fixes || {}).map(([id, e]) => [id, { ...e, ts: Math.max(e.ts || 0, sub.ts || 0) }]));
-    out = mergeStores(out, stamped);
+/**
+ * What learners get. Anyone's fixes merge into the repo at once, but a
+ * corrected chart reaches learners only once the maintainer approves it:
+ *  - approved tag → exactly the approved snapshot (later edits wait for review);
+ *  - unapproved high-confidence tag → the generated chart, ignoring edits;
+ *  - anything else (low confidence, or approved as hidden) → not shown.
+ */
+export function learnerTags(rawTags, approved) {
+  const out = [];
+  for (const t of rawTags) {
+    const a = approved && approved[String(t.id)];
+    if (a) {
+      if (!a.hide && a.parts) out.push({ ...t, parts: a.parts, approved: true });
+      continue;
+    }
+    if (t.confidence !== 'low') out.push(t);
   }
   return out;
 }
 
-export function applyCorrections(rawTags, store, approved = store) {
+/** Tags with a fix the maintainer hasn't approved (at its current version). */
+export function awaitingReview(remote, approved) {
+  return Object.keys(remote || {}).filter(id => !approved || !approved[id] || approved[id].version !== remote[id].ts);
+}
+
+export function buildApproval(versions, original = {}, repo = REPO) {
+  const ids = Object.keys(versions);
+  const title = `Approve for learners: ${ids.slice(0, 3).map(id => (original[id] && original[id].title) || '#' + id).join(', ')}${ids.length > 3 ? ` +${ids.length - 3}` : ''}`;
+  const body = [
+    'Approval from the Daily Tag review screen: these charts are correct and can be shown to learners.',
+    '',
+    ...ids.map(id => `- ${(original[id] && original[id].title) || 'tag'} (#${id}) at version ${versions[id] || 'as generated'}`),
+    '',
+    `<!-- ${APPROVAL_MARKER} -->`,
+    '```json',
+    JSON.stringify(versions),
+    '```',
+  ].join('\n');
+  const base = `https://github.com/${repo}/issues/new`;
+  return { title, body, url: `${base}?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}` };
+}
+
+export function parseApproval(body) {
+  const i = String(body || '').indexOf(APPROVAL_MARKER);
+  if (i < 0) throw new Error('No approval marker');
+  const m = body.slice(i).match(/```json\s*([\s\S]*?)```/);
+  if (!m) throw new Error('No JSON block');
+  const obj = JSON.parse(m[1]);
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('Approval must be an object');
+  const out = {};
+  for (const [id, v] of Object.entries(obj)) {
+    if (!/^\d{1,7}$/.test(id) || !Number.isFinite(Number(v))) throw new Error(`Bad approval ${id}`);
+    out[id] = Number(v);
+  }
+  return out;
+}
+
+export function applyCorrections(rawTags, store) {
   const out = [];
   for (const t0 of rawTags) {
-    const t = { ...t0, trusted: isTrusted(t0, approved) };
+    const t = { ...t0 };
     const e = store && store[String(t.id)];
     // scores bring rests: lessons learn the sung notes, notation shows the written part
     const hasRests = Object.values(t.parts).some(ns => ns.some(isRest));

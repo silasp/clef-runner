@@ -142,6 +142,8 @@ export function showReviewQueue() {
     return checked === 4 ? 'done' : checked ? 'part' : 'todo';
   };
   const nextTodo = sorted.find(t => status(t) !== 'done');
+  const reviewer = env.reviewer();
+  const waiting = reviewer ? tags.filter(t => t.awaiting) : [];
   app.innerHTML = `${env.topBar()}
   <main class="screen review-queue">
     <a href="#" class="back">‹ Path</a>
@@ -151,11 +153,15 @@ export function showReviewQueue() {
       ${nextTodo ? `<button class="primary" data-go="${nextTodo.id}">Check next: ${esc(nextTodo.title)}</button>` : ''}
       ${submitButton(pend.length)}
     </div>
+    ${waiting.length ? `<h2>Awaiting your review (${waiting.length})</h2>
+    <ul class="rq">${waiting.map(t => `<li data-go="${t.id}" class="todo"><span class="rq-t">${esc(t.title)}</span><span class="rq-s"></span>
+      <span class="muted small">${t.live ? 'learners see the previous version' : 'hidden from learners'}</span></li>`).join('')}</ul>
+    <h2>All tags</h2>` : ''}
     <ul class="rq">${sorted.map(t => {
       const st = status(t);
       return `<li data-go="${t.id}" class="${st}"><span class="rq-t">${esc(t.title)}</span>
         <span class="rq-s">${PARTS.map(p => `<i title="${p}">${partBadge(t.id, p) || '·'}</i>`).join('')}</span>
-        <span class="muted small">${t.trusted ? (t.source === 'verified' ? '✓ sheet' : t.source) : '🔧 unverified'}${pend.includes(t.id) ? ' · unsent' : ''}</span></li>`;
+        <span class="muted small">${t.live ? (t.source === 'verified' ? '✓ sheet' : t.source) : '🔧 hidden'}${t.awaiting ? ' · fix awaiting review' : ''}${pend.includes(t.id) ? ' · unsent' : ''}</span></li>`;
     }).join('')}</ul>
   </main>`;
   app.querySelectorAll('[data-go]').forEach(el => el.onclick = () => { location.hash = `review/${el.dataset.go}`; });
@@ -169,6 +175,26 @@ function submitButton(n) {
 function bindSubmit(root) {
   const b = root.querySelector('[data-act=submit]');
   if (b) b.onclick = () => submit();
+  const ap = root.querySelector('[data-act=approve]');
+  if (ap) ap.onclick = () => {
+    const id = ap.dataset.id;
+    const version = C.versionOf(id, env.remote());
+    const a = C.buildApproval({ [id]: version }, { [id]: env.raw(id) });
+    window.open(a.url, '_blank', 'noopener');
+    env.toast('Opened on GitHub — press “Submit new issue” to approve');
+  };
+}
+
+/** The maintainer's approval panel: approve exactly the version in the repo. */
+function approveBox(tag) {
+  const unsent = C.pending(env.store(), env.remote()).includes(tag.id);
+  const a = env.approved()[tag.id];
+  const current = C.versionOf(tag.id, env.remote());
+  const state = a && a.version === current ? `✅ Approved ${a.at}${a.hide ? ' (hidden)' : ''}` : a ? 'Approved earlier — changed since' : 'Not approved yet';
+  return `<div class="approve-box"><span>${state}</span>
+    ${a && a.version === current ? '' : unsent
+      ? '<span class="muted small">Submit your own edits first; approve once they have merged.</span>'
+      : `<button class="sm primary" data-act="approve" data-id="${tag.id}">✅ Approve for learners</button>`}</div>`;
 }
 
 /** Open the prefilled GitHub issue for everything unsent. */
@@ -190,7 +216,7 @@ export function submit() {
   }
   for (const id of ids) store[id].submitted = true;
   env.save();
-  env.toast('Opened on GitHub — press “Submit new issue”. Your fix goes live once it’s reviewed.');
+  env.toast('Opened on GitHub — press “Submit new issue”. Your fix reaches learners once it’s reviewed.');
   if (location.hash === '#review') showReviewQueue();
 }
 
@@ -242,7 +268,9 @@ function render() {
       ${submitButton(pend)}
     </div>
     <h1>${esc(tag.title)}</h1>
-    ${tag.trusted ? '' : `<div class="unverified">🔧 <b>Unverified tag</b> — hidden from learners until it's checked. Compare every part with the sheet music and the real singer, fix what's wrong, press ✓ for each part, then Submit. Fixes go live once they're reviewed.</div>`}
+    ${!tag.live ? `<div class="unverified">🔧 <b>Hidden from learners</b> until it's checked and approved. Compare every part with the sheet music and the real singer, fix what's wrong, press ✓ for each part, then Submit.</div>`
+      : tag.awaiting ? `<div class="unverified">✎ This chart has a fix awaiting review — learners still see the previous version.</div>` : ''}
+    ${env.reviewer() ? approveBox(tag) : ''}
     <div class="muted small">#${tag.rank} · our notes ${sourceLabel}${tag.corrected ? ' · corrected' : ''}</div>
     <div class="tabs" role="tablist">${PARTS.map(p => `<button role="tab" class="tab ${p === view.part ? 'on' : ''}" data-part="${p}">${p} <b>${partBadge(view.id, p)}</b></button>`).join('')}</div>
 
@@ -505,7 +533,7 @@ function bind() {
     const nextPart = PARTS[PARTS.indexOf(view.part) + 1];
     if (back !== 'lesson' && nextPart) { go(0, nextPart); return; }
     env.toast(back === 'lesson' ? `Saved — thanks!` : `${tag.title} checked ✓ — remember to Submit`);
-    if (sessionStorage.getItem('daily-tag:fixmode') && !tag.trusted && back !== 'lesson') { env.fixAnother(); return; }
+    if (sessionStorage.getItem('daily-tag:fixmode') && !tag.live && back !== 'lesson') { env.fixAnother(); return; }
     location.hash = backHash();
   };
   $('[data-act=hide]', app).onclick = () => {

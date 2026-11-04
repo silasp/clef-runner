@@ -11,7 +11,7 @@ import { mountKeyboard, rangeFor } from './keyboard.js';
 import { framesToNotes, alignPitches, lyricMatch, combineScores } from './scoring.js';
 import * as audio from './audio.js';
 import { listen, hasMic, hasSpeech } from './mic.js';
-import { applyCorrections, mergeStores, pruneLocal, loadLocal, saveLocal, pending, withRests, pendingStore } from './corrections.js';
+import { applyCorrections, mergeStores, pruneLocal, loadLocal, saveLocal, pending, withRests, learnerTags, awaitingReview } from './corrections.js';
 import { initReview, showReview, showReviewQueue, setReviewBack } from './review.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -21,9 +21,10 @@ let TAGS = [];
 let BY_ID = {};
 let RAW_BY_ID = {};         // tags as generated, before corrections
 let RAW = [];
-let REMOTE_FIXES = {};      // data/corrections.json (approved by the maintainer)
-let PENDING = {};           // data/pending.json (fixes awaiting review; shown to reviewers only)
-let LEARN = [];             // tags shown to learners: trusted ones (plus any already started)
+let REMOTE_FIXES = {};      // data/corrections.json — everyone's fixes, merged at once
+let APPROVED = {};          // data/approved.json — charts the maintainer approved for learners
+let LEARN = [];             // what learners see: approved charts, else unedited high-confidence ones
+let EDIT_BY_ID = {};        // every tag with every fix (the correction screen)
 let LOCAL_FIXES = loadLocal();  // this device's edits, until they reach the repo
 let WORD_POOL = [];
 let lesson = null;
@@ -39,8 +40,8 @@ async function boot() {
     const [res, fixes] = await Promise.all([
       fetch('data/tags.json'),
       fetch('data/corrections.json').then(r => (r.ok ? r.json() : {})).catch(() => ({})),
-      fetch('data/pending.json').then(r => (r.ok ? r.json() : {})).catch(() => ({})),
-    ]).then(([a, b, c]) => { PENDING = c || {}; return [a, b]; });
+      fetch('data/approved.json').then(r => (r.ok ? r.json() : {})).catch(() => ({})),
+    ]).then(([a, b, c]) => { APPROVED = c || {}; return [a, b]; });
     const raw = await res.json();
     RAW = raw.tags;
     RAW_BY_ID = Object.fromEntries(RAW.map(t => [String(t.id), t]));
@@ -63,11 +64,22 @@ async function boot() {
 
 /** Apply corrections (repo + this device) and prepare the library. */
 function rebuildTags() {
-  const held = state.settings.reviewer ? pendingStore(PENDING) : {};
-  TAGS = prepareTags(applyCorrections(RAW, mergeStores(mergeStores(REMOTE_FIXES, held), LOCAL_FIXES), REMOTE_FIXES));
-  BY_ID = Object.fromEntries(TAGS.map(t => [t.id, t]));
-  const started = new Set(Object.keys(state.cards).map(k => k.split('/')[0]));
-  LEARN = TAGS.filter(t => t.trusted || state.settings.showUnverified || started.has(t.id));
+  // editing view: generated charts + everyone's fixes + this device's unsent ones
+  TAGS = prepareTags(applyCorrections(RAW, mergeStores(REMOTE_FIXES, LOCAL_FIXES)));
+  EDIT_BY_ID = Object.fromEntries(TAGS.map(t => [t.id, t]));
+  // learner view: only what the maintainer approved (or unedited high-confidence charts)
+  const live = prepareTags(applyCorrections(learnerTags(RAW, APPROVED), {}));
+  const liveIds = new Set(live.map(t => t.id));
+  const waiting = new Set(awaitingReview(REMOTE_FIXES, APPROVED));
+  for (const t of TAGS) { t.live = liveIds.has(t.id); t.awaiting = waiting.has(t.id); }
+  if (state.settings.showUnverified) {
+    LEARN = TAGS;                                   // opted in: every chart, unreviewed edits included
+  } else {
+    const started = new Set(Object.keys(state.cards).map(k => k.split('/')[0]));
+    const keep = TAGS.filter(t => !liveIds.has(t.id) && started.has(t.id));   // don't strand learners mid-tag
+    LEARN = [...live, ...keep];
+  }
+  BY_ID = { ...EDIT_BY_ID, ...Object.fromEntries(LEARN.map(t => [t.id, t])) };
   WORD_POOL = [...new Set(TAGS.flatMap(t => (t.lyrics || '').split(/\s+/)))];
 }
 
@@ -75,7 +87,9 @@ initReview({
   app, esc, toast, topBar,
   staffHtml: (...a) => staffHtml(...a),
   raw: id => RAW_BY_ID[String(id)],
-  tag: id => BY_ID[String(id)],
+  tag: id => EDIT_BY_ID[String(id)],
+  approved: () => APPROVED,
+  reviewer: () => !!state.settings.reviewer,
   tags: () => TAGS,
   fixAnother: () => fixRandomTag(),
   startedTags: () => [...new Set(Object.keys(state.cards).map(k => k.split('/')[0]))],
@@ -195,7 +209,7 @@ function showHome() {
     </section>
     <section class="fixmode">
       <button class="fix-btn" data-act="fixmode">🔧 I wanna fix some broken tags</button>
-      <div class="muted small">${TAGS.filter(t => !t.trusted).length} tags are hidden until someone checks them against the sheet music and recording. Fixes go live once they're reviewed.</div>
+      <div class="muted small">${TAGS.filter(t => !t.live).length} tags are hidden from learners until someone checks them against the sheet music and recording. Fixes reach learners once they're reviewed.</div>
     </section>
     <footer class="foot muted small">
       <a href="#badges">🏅 Badges (${state.badges.length}/${BADGES.length})</a> ·
@@ -215,8 +229,7 @@ function showHome() {
 
 /** Fix mode: a random hidden (low-confidence) tag nobody has a fix for yet. */
 function fixRandomTag() {
-  const held = new Set(Object.values(PENDING).flatMap(sub => Object.keys(sub.fixes || {})));
-  const pool = TAGS.filter(t => !t.trusted && !LOCAL_FIXES[t.id] && !held.has(t.id) && !REMOTE_FIXES[t.id]);
+  const pool = TAGS.filter(t => !t.live && !LOCAL_FIXES[t.id] && !REMOTE_FIXES[t.id]);
   if (!pool.length) { toast('No broken tags left to fix — thank you!'); return; }
   const withSheet = pool.filter(t => t.sheet);
   const pick = (withSheet.length ? withSheet : pool)[Math.floor(Math.random() * (withSheet.length || pool.length))];
@@ -306,8 +319,8 @@ function showSettings() {
         <option value="never" ${s.rhythm === 'never' ? 'selected' : ''}>Never</option>
       </select>
     </label>
-    <label class="check"><input type="checkbox" name="showUnverified" ${s.showUnverified ? 'checked' : ''}> Also learn unverified tags (they may contain mistakes)</label>
-    <label class="check"><input type="checkbox" name="reviewer" ${s.reviewer ? 'checked' : ''}> Reviewer: preview fixes that are waiting for review</label>
+    <label class="check"><input type="checkbox" name="showUnverified" ${s.showUnverified ? 'checked' : ''}> Also learn unreviewed tags and edits (they may contain mistakes)</label>
+    <label class="check"><input type="checkbox" name="reviewer" ${s.reviewer ? 'checked' : ''}> I review fixes (maintainer): approve buttons and a review list</label>
     <label class="check"><input type="checkbox" name="speech" ${s.speech ? 'checked' : ''} ${hasSpeech() ? '' : 'disabled'}> Check lyrics with speech recognition ${hasSpeech() ? '' : '(not supported here)'}</label>
     <label class="check"><input type="checkbox" name="octaveFree" ${s.octaveFree ? 'checked' : ''}> Accept singing in any octave</label>
     <label class="check"><input type="checkbox" name="showNames" ${s.showNames ? 'checked' : ''}> Show note names while learning</label>
