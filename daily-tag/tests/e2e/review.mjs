@@ -128,6 +128,21 @@ await page.goto(BASE + `#drill/intro/${id}/Lead/0`);
 await page.waitForSelector('.ex-body .staff-wrap');
 assert.match(await page.textContent('.ex-body'), /w0/);
 assert.ok(await page.locator('[data-act=fix]').count(), 'lesson offers a fix link');
+await page.goto(BASE + `#drill/intro/${id}/Lead/all`);
+await page.waitForSelector('.ex-body .staff-wrap');
+assert.ok(await page.locator('.ex-body .st-rest').count() >= 1, 'lessons show the rest too');
+
+// make a part the same as another: copy the Lead into the Tenor an octave up
+page.once('dialog', d => d.accept());
+await page.goto(BASE + `#review/${id}/Tenor/0`);
+await page.waitForSelector('[data-act=copy-part]');
+await page.selectOption('select[name=copyFrom]', 'Lead');
+await page.selectOption('select[name=copyShift]', '12');
+await page.click('[data-act=copy-part]');
+const cp = await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts, id);
+assert.deepEqual(cp.Tenor.notes.map(n => n[0]), cp.Lead.notes.map(n => n[0] + (/r/.test(n[5] || '') ? 0 : 12)), 'Tenor = Lead an octave up');
+await page.click('[data-op=undo]');
+assert.ok(!JSON.parse(await page.evaluate(() => localStorage.getItem('daily-tag:corrections')))[id].parts.Tenor, 'undo restores the Tenor');
 
 // hide a tag
 page.on('dialog', d => d.accept('not a real tag'));

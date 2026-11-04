@@ -258,6 +258,15 @@ function render() {
           <button class="sm" data-op="autobar" title="Treat the selected note as a downbeat and place barlines every bar from here">Bars from here, every</button>
           <select name="perBar" aria-label="Beats per bar">${[2, 3, 4, 6].map(b => `<option value="${b}" ${b === (view.perBar || 4) ? 'selected' : ''}>${b} beats</option>`).join('')}</select>
         </div>
+        <div class="copy-part">
+          <span class="small"><b>Same as</b></span>
+          <select name="copyFrom" aria-label="Part to copy">${PARTS.filter(p => p !== view.part).map(p => `<option ${p === view.copyFrom ? 'selected' : ''}>${p}</option>`).join('')}</select>
+          <select name="copyShift" aria-label="Octave">${[[0, 'same pitch'], [12, 'octave up'], [-12, 'octave down']].map(([v, l]) => `<option value="${v}" ${v === (view.copyShift || 0) ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          <span class="btns">
+            ${view.whole ? '' : '<button class="sm" data-act="copy-phrase">Copy this phrase</button>'}
+            <button class="sm" data-act="copy-part">Copy whole part</button>
+          </span>
+        </div>
         <label class="syl">Syllable on ${noteName(selNote[0], tag.tonic)}
           <input name="syl" value="${esc(selNote[4] || '')}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="(held from before)">
         </label>
@@ -354,6 +363,28 @@ function bind() {
     const { dotted } = lengthParts(view.notes[view.sel][3]);
     edit(n => C.setBeats(n, view.sel, Number(b.dataset.len) * (dotted ? 1.5 : 1)), { keepSel: true });
   });
+  // make this part (or phrase) the same as another part
+  const cf = $('select[name=copyFrom]', app), cs = $('select[name=copyShift]', app);
+  view.copyFrom = cf.value;
+  cf.onchange = () => { view.copyFrom = cf.value; };
+  cs.onchange = () => { view.copyShift = Number(cs.value); };
+  const source = () => { const t = env.tag(view.id); return (t.written || t.parts)[cf.value]; };
+  const cpPhrase = $('[data-act=copy-phrase]', app);
+  if (cpPhrase) cpPhrase.onclick = () => {
+    const [a, b] = view.range;
+    const t0 = view.notes[a][1], last = view.notes[b - 1], t1 = Math.max(last[1] + last[2], (view.notes[b] || [Infinity])[1]);
+    if (!source().some(n => n[1] >= t0 - 0.01 && n[1] < t1 - 0.01)) { env.toast(`${cf.value} has no notes in this phrase`); return; }
+    edit(n => C.copyPart(n, source(), { shift: Number(cs.value), t0, t1 }), {
+      keepSel: true,
+      then: () => { view.sel = view.range[0]; },
+    });
+  };
+  $('[data-act=copy-part]', app).onclick = () => {
+    if (!window.confirm(`Replace the whole ${view.part} part with the ${cf.value} part${Number(cs.value) ? ` (${Number(cs.value) > 0 ? 'an octave up' : 'an octave down'})` : ''}? Undo can bring it back.`)) return;
+    edit(n => C.copyPart(n, source(), { shift: Number(cs.value) }), {
+      then: () => { view.range = view.whole ? [0, view.notes.length] : ranges(view.notes)[0]; view.phrase = 0; view.sel = 0; view.rangeKey = `${view.whole}:0`; },
+    });
+  };
   const per = $('select[name=perBar]', app);
   per.onchange = () => { view.perBar = Number(per.value); };
   // keyboard: tap a key to set the selected note's pitch

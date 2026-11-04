@@ -151,3 +151,24 @@ test('rests: toggle, keep pitch, skip words, stripped for learning', async () =>
   assert.equal(out[0].written.Lead.length, 4, 'notation keeps the rest');
   assert.ok(validate({ 9: { parts: { Lead: { notes: r } } } }));
 });
+
+test('withRests puts written rests back among sung notes; copyPart copies parts', async () => {
+  const { withRests, copyPart, stripRests, toggleRest, toggleFlag } = await import('../js/corrections.js');
+  const written = toggleFlag(toggleRest([[60, 0, 1, 1, 'a'], [62, 1, 1, 1, 'b'], [64, 2, 1, 1, 'c'], [65, 3, 1, 1, 'd']], 1), 1, '|');
+  const sung = stripRests(written);
+  assert.equal(sung[1][5], '|');
+  const { notes, map } = withRests(sung, written);
+  assert.deepEqual(map, [0, -1, 1, 2]);
+  assert.equal(notes[1][5], '|r');
+  assert.equal(notes[2][5] || '', '', 'barline shown once, on the rest');
+  assert.deepEqual(withRests(sung.slice(1), written).map, [0, 1], 'rests outside the phrase are left out');
+  const plain = [[60, 0, 1, 1, 'x']];
+  assert.equal(withRests(plain, plain).notes, plain);
+
+  const lead = [[60, 0, 1, 1, 'a'], [62, 1, 1, 1, 'b'], [64, 2, 1, 1, 'c']];
+  const tenor = [[64, 0, 1.5, 1, 't'], [65, 1.5, 1.5, 1, 'u']];
+  assert.deepEqual(copyPart(tenor, lead, { shift: 12 }).map(n => n[0]), [72, 74, 76]);
+  const ph = copyPart(lead, tenor, { t0: 1, t1: 3 });
+  assert.deepEqual(ph.map(n => [n[0], n[1]]), [[60, 0], [65, 1.5]], 'only the phrase window is replaced');
+  assert.equal(lead[0][0], 60, 'source untouched');
+});

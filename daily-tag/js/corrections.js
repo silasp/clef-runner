@@ -70,6 +70,45 @@ export function stripRests(notes) {
   return out;
 }
 
+/**
+ * For notation: put the written part's rests back among some sung notes
+ * (a phrase). Rests from just before the first note's end to just after
+ * the last note's end are included. Returns { notes, map } where map[k] is
+ * the sung-note index of display item k, or -1 for a rest.
+ */
+export function withRests(sung, written) {
+  if (!sung.length || !written || !written.some(isRest)) return { notes: sung, map: sung.map((_, i) => i) };
+  const t0 = sung[0][1], last = sung[sung.length - 1], t1 = last[1] + last[2] + 0.05;
+  const rests = written.filter(n => isRest(n) && n[1] > t0 && n[1] <= t1);
+  if (!rests.length) return { notes: sung, map: sung.map((_, i) => i) };
+  const items = [...sung.map((n, i) => ({ n, i })), ...rests.map(n => ({ n, i: -1 }))]
+    .sort((a, b) => a.n[1] - b.n[1] || (a.i === -1 ? -1 : 1));
+  // a rest's barline was moved onto the next sung note by stripRests: show it on the rest only
+  for (let k = 1; k < items.length; k++) {
+    if (items[k - 1].i === -1 && hasFlag(items[k - 1].n, '|') && items[k].i !== -1 && hasFlag(items[k].n, '|')) {
+      items[k] = { ...items[k], n: withFlag([...items[k].n], '|', false) };
+    }
+  }
+  return { notes: items.map(x => x.n), map: items.map(x => x.i) };
+}
+
+/**
+ * Make part notes the same as another part's: the whole part, or only the
+ * notes starting in [t0, t1) (a phrase). shift moves the copy in semitones
+ * (±12 for an octave). Returns the new notes, ordered by time.
+ */
+export function copyPart(target, source, { shift = 0, t0 = null, t1 = null } = {}) {
+  const inWin = n => t0 == null || (n[1] >= t0 - 0.01 && n[1] < t1 - 0.01);
+  const copied = source.filter(inWin).map(n => {
+    const c = [...n];
+    if (!isRest(c)) c[0] = Math.max(24, Math.min(96, c[0] + shift));
+    return c;
+  });
+  if (t0 == null) return copied;
+  const kept = target.filter(n => !inWin(n)).map(n => [...n]);
+  return [...kept, ...copied].sort((a, b) => a[1] - b[1]);
+}
+
 /** Note i continues a tie from note i-1 (same pitch, not re-sung). */
 export function tiedFromPrev(notes, i) {
   return i > 0 && hasFlag(notes[i - 1], '~') && notes[i - 1][0] === notes[i][0];

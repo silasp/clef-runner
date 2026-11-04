@@ -11,7 +11,7 @@ import { mountKeyboard, rangeFor } from './keyboard.js';
 import { framesToNotes, alignPitches, lyricMatch, combineScores } from './scoring.js';
 import * as audio from './audio.js';
 import { listen, hasMic, hasSpeech } from './mic.js';
-import { applyCorrections, mergeStores, pruneLocal, loadLocal, saveLocal, pending } from './corrections.js';
+import { applyCorrections, mergeStores, pruneLocal, loadLocal, saveLocal, pending, withRests } from './corrections.js';
 import { initReview, showReview, showReviewQueue, setReviewBack } from './review.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -479,6 +479,16 @@ function finishLesson() {
 
 // ---------------------------------------------------------------- exercise renderers
 function staffHtml(tag, part, notes, opts = {}) {
+  // lessons learn the sung notes; show the written rests among them (the review screen passes the written part)
+  if (!opts.force && !opts._shown && tag.written && tag.written[part] !== tag.parts[part]) {
+    const { notes: shown, map } = withRests(notes, tag.written[part]);
+    if (map.includes(-1)) {
+      const remap = arr => arr && map.map(i => (i === -1 ? true : arr[i]));
+      const hl = opts.highlight != null ? map.indexOf(opts.highlight) : null;
+      const hits = opts.hits && map.map(i => (i === -1 ? undefined : opts.hits[i]));
+      return staffHtml(tag, part, shown, { ...opts, mask: remap(opts.mask), hits, highlight: hl, _shown: true });
+    }
+  }
   const names = opts.names && state.settings.showNames;
   const labels = names ? notes.map(n => noteName(n[0], tag.tonic, false)) : null;
   // long items: one staff row per ≤10 notes
