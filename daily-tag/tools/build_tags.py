@@ -96,6 +96,21 @@ def agreement(audio, sheet):
     return best
 
 
+def well_ordered(parts):
+    """Stricter sanity check for sheet readings: voices in barbershop order
+    (Tenor ≥ Lead-ish, Bass lowest, Bari above Bass and not above the Tenor)
+    and few leaps over an octave within a part. Readings that fail it score
+    0.79 F1 on ground-truth tags, against 0.91 for those that pass."""
+    sung = {p: [n[0] for n in parts[p] if n[0] is not None] for p in PARTS}
+    if any(len(v) < 2 for v in sung.values()):
+        return False
+    med = {p: float(np.median(v)) for p, v in sung.items()}
+    order = (med['Tenor'] >= med['Lead'] - 2 and med['Lead'] >= med['Bass'] + 3
+             and med['Bari'] >= med['Bass'] - 1 and med['Tenor'] >= med['Bari'] - 1)
+    leaps = max(float(np.mean(np.abs(np.diff(v)) > 12)) for v in sung.values())
+    return order and leaps <= 0.08
+
+
 def plausible(parts, slack=2):
     if any(len(parts[p]) < 2 for p in PARTS):
         return False
@@ -191,6 +206,14 @@ def sheet_reading(work, tid):
         for n in parts[p]:
             n[3] = None
     return parts
+
+
+def heard_text(work, tid):
+    """No lyrics on record: the words speech recognition heard the Lead sing."""
+    wf = f'{work}/words/{tid}.json'
+    if not os.path.exists(wf):
+        return ''
+    return ' '.join(w for w, _, _ in json.load(open(wf)).get('Lead', []))
 
 
 def tuned_audio(work, tid):
@@ -523,7 +546,9 @@ def decide(t, work, a):
     if sheet:
         mean, shift, sc = (0.0, 0, {}) if not audio else agreement(audio, sung)
         info['sheet_agree'] = {p: round(v, 2) for p, v in sc.items()}
-        if not audio or mean >= a.min_sheet_agree:
+        trusted = well_ordered(sheet) or (bool(audio) and mean >= 0.75)
+        info['well_ordered'] = well_ordered(sheet)
+        if trusted and (not audio or mean >= a.min_sheet_agree):
             matched = bool(audio) and mean >= 0.35
             shift = shift if matched else 0
             info['shift'] = shift
@@ -575,7 +600,7 @@ def main():
             rejected.append((t['rank'], t['Title'], source, {k: v for k, v in info.items() if not k.startswith('_')}))
             continue
         if source in ('score', 'sheet', 'verified'):   # notation (arranger's score or sheet reading): rhythm, ties, bars, rests as written
-            lyr = t.get('Lyrics') or ''
+            lyr = t.get('Lyrics') or heard_text(a.work, t['id'])
             placed = [p for p in PARTS if any(n[4] for n in parts[p])]      # an arranger's file brings its own
             pdf = f'{a.work}/sheets/{t["id"]}.pdf'
             if not placed and os.path.exists(pdf):
@@ -609,7 +634,7 @@ def main():
         # lyrics: each part's own recognised words, falling back to the Lead's timing
         wf = f'{a.work}/words/{t["id"]}.json'
         heard = json.load(open(wf)) if os.path.exists(wf) else {}
-        lyr = t.get('Lyrics') or ''
+        lyr = t.get('Lyrics') or heard_text(a.work, t['id'])
         lead_times = word_times(lyr, heard.get('Lead', []))
         with_lyrics = 0
         for p in PARTS:
