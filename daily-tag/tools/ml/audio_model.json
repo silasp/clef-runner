@@ -1,0 +1,16 @@
+{
+ "params": {
+  "vthr": 0.0,
+  "rms_rel": 0.05,
+  "med_w": 3,
+  "drift_s": 0.0,
+  "glide_ms": 45,
+  "gap_ms": 20,
+  "min_ms": 200,
+  "slip_dist": 9,
+  "slip_margin": 6,
+  "slip_win": 3,
+  "cm_vote": 0.35,
+  "cm_use": 0
+ },
+ "filter": 

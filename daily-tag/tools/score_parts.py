@@ -397,30 +397,31 @@ def to_parts(path):
 def fix_octaves(parts):
     """Put each staff pair in its sounding octave. Scores (and converters)
     disagree on whether a tenor clef's octave is already applied, so judge by
-    the music: the Lead sits around B3, the Bass around B2, and the Tenor is
-    above the Bari."""
+    the music: choose octave shifts for the upper (Tenor/Lead) and lower
+    (Bari/Bass) pair together so the four voices sit closest to their
+    typical registers (medians measured on the recorded tags: Tenor ≈ F4,
+    Lead ≈ C4, Bari ≈ A♯3, Bass ≈ D♯3)."""
+    typical = {'Tenor': 65, 'Lead': 60, 'Bari': 58, 'Bass': 51}
+
     def med(p):
         ms = sorted(n[0] for n in parts[p] if n[0] is not None)
         return ms[len(ms) // 2] if ms else None
-
-    def move(pair, k):
-        for p in pair:
+    meds = {p: med(p) for p in typical}
+    if any(v is None for v in meds.values()):
+        return
+    best = None
+    for ku in (-24, -12, 0, 12, 24):
+        for kl in (-24, -12, 0, 12, 24):
+            cost = sum((meds[p] + (ku if p in ('Tenor', 'Lead') else kl) - typical[p]) ** 2 for p in typical)
+            cost += 0.01 * (abs(ku) + abs(kl))          # prefer leaving a score as written
+            if best is None or cost < best[0]:
+                best = (cost, ku, kl)
+    _, ku, kl = best
+    for p, k in (('Tenor', ku), ('Lead', ku), ('Bari', kl), ('Bass', kl)):
+        if k:
             for n in parts[p]:
                 if n[0] is not None:
                     n[0] += k
-    lead, bass = med('Lead'), med('Bass')
-    if bass is not None:
-        if bass < 38:
-            move(('Bari', 'Bass'), 12)
-        elif bass > 56:
-            move(('Bari', 'Bass'), -12)
-    lead, tenor, bari = med('Lead'), med('Tenor'), med('Bari')
-    if lead is not None:
-        if lead < 53 or (tenor is not None and bari is not None and tenor < bari - 2):
-            move(('Tenor', 'Lead'), 12)
-        elif lead > 67:
-            move(('Tenor', 'Lead'), -12)
-
 
 if __name__ == '__main__':
     parts, key = to_parts(sys.argv[1])

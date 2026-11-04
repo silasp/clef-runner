@@ -175,6 +175,43 @@ def load_score(work, tid, written_key=None):
     return None, False
 
 
+def sheet_reading(work, tid):
+    """homr's MusicXML for the tag's sheet, read like an arranger's score."""
+    import score_parts
+    x = f'{work}/sheets/{tid}.musicxml'
+    if not os.path.exists(x):
+        return None
+    try:
+        parts, _ = score_parts.to_parts(x)
+    except Exception:  # noqa: BLE001
+        return None
+    if not parts or any(sum(1 for n in parts[p] if n[0] is not None) < 2 for p in PARTS):
+        return None
+    for p in PARTS:                       # OMR lyrics are unreliable: time words from the recording instead
+        for n in parts[p]:
+            n[3] = None
+    return parts
+
+
+def tuned_audio(work, tid):
+    """Audio transcription with the parameters (and note filter) learned on
+    arrangers' scores (tools/ml/audio_tune.py), from cached features."""
+    ml = os.path.join(os.path.dirname(__file__), 'ml')
+    mf, ff = os.path.join(ml, 'audio_model.json'), f'{work}/feat/{tid}.npz'
+    if not (os.path.exists(mf) and os.path.exists(ff)):
+        return None
+    sys.path.insert(0, ml)
+    import audio_tune as AT
+    model = json.load(open(mf))
+    z = np.load(ff)
+    parts = AT.transcribe({k: z[k] for k in z.files}, model['params'])
+    if model.get('filter'):
+        import pickle
+        clf = pickle.load(open(os.path.join(ml, 'audio_clf.pkl'), 'rb'))
+        parts = AT.apply_filter(parts, clf, model['thr'])
+    return {p: [[n[0], float(n[1]), float(n[2])] for n in parts[p]] for p in PARTS}
+
+
 def score_word_anchors(score, heard):
     """(beat, seconds) for the score's words, from where the recogniser heard them."""
     starts, words = [], []
@@ -449,12 +486,12 @@ def decide(t, work, a):
     if os.path.exists(f):
         tr = json.load(open(f))
         if tr.get('ok'):
-            audio = {p: clean_notes(tr[p]['notes'], p) for p in PARTS}
+            audio = tuned_audio(work, t['id']) or {p: clean_notes(tr[p]['notes'], p) for p in PARTS}
             info['resid'] = tr['resid']
             info['agree'] = {p: tr[p]['agree'] for p in PARTS}
             audio_ok = (tr['resid'] <= a.max_resid and all(tr[p]['acc'] >= a.min_acc for p in PARTS)
                         and all(tr[p]['agree'] >= a.min_agree for p in PARTS) and plausible(audio))
-    score, needs_check = load_score(work, t['id'], t.get('WritKey'))
+    score, needs_check = (None, False) if getattr(a, 'no_scores', False) else load_score(work, t['id'], t.get('WritKey'))
     if score:
         sung = {p: [[n[0], n[1], n[2]] for n in score[p] if n[0] is not None] for p in PARTS}
         if plausible(sung):
@@ -475,34 +512,30 @@ def decide(t, work, a):
         heard = json.load(open(wf)).get('Lead', []) if os.path.exists(wf) else []
         anchors = score_word_anchors(score, heard)
         return score_times(score, audio['Lead'] if matched else None, shift, anchors), 'score', info
-    sheet = None
-    x = f'{work}/sheets/{t["id"]}.musicxml'
-    if os.path.exists(x):
-        try:
-            sheet = omr_parts.split_voices(omr_parts.read_events(x))
-        except Exception:
+    # the sheet-music reading (homr OMR, read with score_parts: voices, octaves, rests, bars).
+    # Measured on arrangers' scores it beats the audio transcription (F1 ≈ 0.92 vs 0.70),
+    # so it wins whenever it's plausible and not flatly contradicted by the recording.
+    sheet = sheet_reading(work, t['id'])
+    if sheet:
+        sung = {p: [[n[0], n[1], n[2]] for n in sheet[p] if n[0] is not None] for p in PARTS}
+        if not plausible(sung):
             sheet = None
-        if sheet and not plausible(sheet):
-            sheet = None
-    if audio and sheet:
-        mean, shift, sc = agreement(audio, sheet)
+    if sheet:
+        mean, shift, sc = (0.0, 0, {}) if not audio else agreement(audio, sung)
         info['sheet_agree'] = {p: round(v, 2) for p, v in sc.items()}
-        info['shift'] = shift
-        info['_sheet'] = sheet
-        if mean >= 0.75 and min(sc.values()) >= 0.55 and plausible(audio):
-            return audio, 'verified', info
-        if audio_ok:
-            return audio, 'audio', info
-        if sc['Lead'] >= 0.6:                 # the sheet matches the recording's melody
-            timed = sheet_times(sheet, audio['Lead'], shift)
-            if plausible(timed):
-                return timed, 'sheet', info
-        return None, 'sources disagree', info
+        if not audio or mean >= a.min_sheet_agree:
+            matched = bool(audio) and mean >= 0.35
+            shift = shift if matched else 0
+            info['shift'] = shift
+            wf = f'{work}/words/{t["id"]}.json'
+            heard = json.load(open(wf)).get('Lead', []) if os.path.exists(wf) else []
+            timed = score_times(sheet, audio['Lead'] if matched else None, shift, score_word_anchors(sheet, heard))
+            if audio or a.sheet_only:
+                return timed, ('verified' if matched and mean >= 0.75 else 'sheet'), info
     if audio_ok:
         return audio, 'audio', info
-    if sheet and not audio and a.sheet_only:
-        info['_sheet'], info['shift'] = sheet, 0
-        return sheet_times(sheet, None, 0), 'sheet', info
+    if audio and sheet:
+        return None, 'sources disagree', info
     return None, 'no trustworthy source', info
 
 
@@ -516,6 +549,10 @@ def main():
     ap.add_argument('--min-acc', type=float, default=0.8)
     ap.add_argument('--min-agree', type=float, default=0.6)
     ap.add_argument('--max-resid', type=float, default=0.12)
+    ap.add_argument('--no-scores', action='store_true', help="ignore arrangers' score files (to measure the other sources)")
+    ap.add_argument('--only', default='', help='comma-separated tag ids to build (for evaluation)')
+    ap.add_argument('--min-sheet-agree', type=float, default=0.2,
+                    help='use the sheet reading unless it agrees with the recording less than this (see ml/sheet_gate.py)')
     ap.add_argument('--with-sheet-only', dest='sheet_only', action='store_true',
                     help='also include tags that have only sheet music (no learning tracks)')
     a = ap.parse_args()
@@ -529,13 +566,15 @@ def main():
             break
         if t['Parts'] != '4' or 'Female' in t['Type']:
             continue
+        if a.only and t['id'] not in a.only.split(','):
+            continue
         if not a.sheet_only and not all(t.get('_types', {}).get(p) == 'mp3' for p in PARTS):
             continue                       # only tags with per-part learning tracks
         parts, source, info = decide(t, a.work, a)
         if parts is None:
             rejected.append((t['rank'], t['Title'], source, {k: v for k, v in info.items() if not k.startswith('_')}))
             continue
-        if source == 'score':      # the arranger's score: notes, rhythm, ties, bars, rests, lyrics as written
+        if source in ('score', 'sheet', 'verified'):   # notation (arranger's score or sheet reading): rhythm, ties, bars, rests as written
             lyr = t.get('Lyrics') or ''
             if not any(n[4] for p in PARTS for n in parts[p]):
                 wf = f'{a.work}/words/{t["id"]}.json'

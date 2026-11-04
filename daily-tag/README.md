@@ -132,6 +132,18 @@ barbershoptags.com links many tags to the arranger's notation file. Of the 761 t
 * Result: 176 tags come straight from the arranger's score (source `score`).
 * `tools/score_check.py` measures the library against the scores (and against [numtags](https://github.com/bumbleblue/numtags)' independent transcriptions). Before this step the transcribed tags matched the arrangers' scores with a mean F1 of about 0.87 on pitch sequences — roughly one note in seven wrong or missing.
 
+**Tuned on the arrangers' scores** (`tools/ml/`)
+
+The 91 tags whose score files read with certainty (MuseScore, MusicXML, Finale `.musx`) are ground truth for tuning the other sources. Accuracy is note-sequence F1 per part (repeats collapsed, best key shift, no per-part octave freedom), measured with grouped 5-fold cross-validation over tags, so numbers are on tags the tuning never saw.
+
+| Component | Before | After | What changed |
+|---|---|---|---|
+| Sheet-music reading (homr OMR) | 0.816 | **0.903** | read homr's MusicXML with the score reader (voices, not top/bottom of chords); octaves fitted jointly for both staves |
+| Audio transcription | 0.747 | **0.875** (held-out) | 400-trial random search over the note segmentation (voicing/loudness gates, smoothing, tuning drift, glides, gaps, minimum length, octave repair) — `audio_feats.py` caches pYIN/contrast features, `audio_tune.py` searches |
+| Library, tags without a score | 0.862 (70 of 91 built) | **0.907** (86 of 91) | build prefers the sheet reading (F1 ≈ 0.92 vs audio ≈ 0.70 on the same tags) unless it's implausible or contradicts the recording (`sheet_gate.py`, `library_eval.py`) |
+
+Tried and not kept, because they didn't help on held-out tags: a gradient-boosted note filter for the audio (0.873 vs 0.875); letting the recording repair the sheet reading's octaves/voices or arbitrate single notes (`fusion.py`: 0.904 → 0.890); reading PDFs at 300 dpi instead of 200 (0.902 vs 0.914); reading sheets by eye with a vision model (strong on clean upper staves, unreliable on ledger-line notes). numtags is too small an overlap (15 tags) to be a source.
+
 Every other tag gets **two independent transcriptions**, and they check each other.
 
 **1. From the learning tracks** (`tools/extract_notes.py`)
@@ -170,6 +182,9 @@ python3 tools/extract_notes.py --work work --pages 25 --limit 761 process --work
 python3 tools/omr_batch.py --work work --top 1000 --homr homr
 python3 tools/align_lyrics.py --work work --parts Lead          # then Bass,Tenor,Bari
 python3 tools/fetch_scores.py --work work --top 1000                # arrangers' score files (+ musx2mxl)
+python3 tools/ml/gt.py --work work                                  # ground truth from score files
+python3 tools/ml/audio_feats.py --work work --ids all              # cache pYIN / contrast features
+python3 tools/ml/audio_tune.py --work work --trials 400            # tune audio segmentation (CV report)
 python3 tools/build_tags.py --work work --top 1000
 python3 tools/test_build.py                                     # self-test of the build helpers
 ```
