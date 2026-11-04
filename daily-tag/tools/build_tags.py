@@ -483,6 +483,12 @@ def add_rhythm(parts, sheet=None, shift=0):
     return parts
 
 
+def certain_score(work, tid):
+    """The tag's notes came from a score file that reads exactly (not the .mus reader)."""
+    return any(os.path.exists(f'{work}/notation/{tid}.{e}') for e in ('mscz', 'xml', 'mxl', 'musx')) and \
+        not os.path.exists(f'{work}/notation/{tid}.mus')
+
+
 def tag_record(t, source, with_lyrics, parts, cache, a):
     has_tracks = all(t.get('_types', {}).get(p) == 'mp3' for p in PARTS)
     tracks = {p: resolve_track(t.get(p), cache) for p in PARTS} if has_tracks else {}
@@ -498,9 +504,10 @@ def tag_record(t, source, with_lyrics, parts, cache, a):
         'downloads': int(t.get('Downloaded') or 0),
         'rank': t['rank'],
         'source': source,
-        # high: the arranger's score, or a sheet reading the recording confirms (≈0.95 F1);
-        # low: one unconfirmed source (sheet ≈0.83, audio) — hidden from learners until fixed
-        'confidence': 'high' if source in ('score', 'verified') else 'low',
+        # high only for an arranger's score file read with certainty (MuseScore, MusicXML,
+        # Finale .musx). Everything else — legacy Finale .mus readings, sheet readings
+        # (even confirmed by the recording), audio — needs a person to check and fix it.
+        'confidence': 'high' if source == 'score' and certain_score(a.work, t['id']) else 'low',
         'lyricsTimed': with_lyrics == 4,
         'page': f"{SITE}tag-{t['id']}-{slug(t['Title'])}",
         'sheet': t.get('SheetMusicAlt') or '',
