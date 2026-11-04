@@ -52,8 +52,9 @@ test('staff shows syllables under notes with melisma extenders and hyphens', () 
   const notes = [[60, 0, .5, .5, 'lo-'], [62, .5, .5, .5, 'ving'], [64, 1, .5, .5, 'you'], [65, 1.5, .5, .5, ''], [67, 2, 1, 2, '']];
   const svg = renderStaff(notes, { part: 'Lead', lyrics: true, rhythm: true });
   assert.ok(svg.includes('>lo<') && svg.includes('>ving<') && svg.includes('>you<'));
-  assert.ok(svg.includes('>-<'), 'hyphen between syllables of one word');
-  assert.equal((svg.match(/st-ext/g) || []).length, 2, 'extender over the two held notes');
+  assert.equal((svg.match(/st-hyph/g) || []).length, 1, 'hyphen between syllables of one word');
+  assert.equal((svg.match(/st-ext/g) || []).length, 1, 'one extender line under the held notes');
+  assert.match(svg, /text-anchor="start" class="st-syl">you</, 'a melisma syllable is left-aligned');
   assert.ok((svg.match(/st-stem/g) || []).length >= 4, 'stems drawn in rhythm mode');
   const plain = renderStaff(notes, { part: 'Lead' });
   assert.ok(!plain.includes('st-syl') && !plain.includes('st-stem'), 'pitch-only view has neither');
@@ -99,4 +100,37 @@ test('eighths and sixteenths in a beat are beamed, not flagged', async () => {
   const lone = renderStaff([[60, 0, 1, 1, ''], [62, 1, .5, .5, ''], [64, 1.5, 1, 1, '']], { rhythm: true });
   assert.equal(count(lone, /st-beam/g), 0);
   assert.equal(count(lone, /st-flag/g), 1, 'a lone eighth keeps its flag');
+});
+
+test('engraving: lines break at barlines, balanced; final barline; metre inferred', async () => {
+  const { renderStaff, inferMeter } = await import('../js/notation.js');
+  // 8 bars of 4/4 quarter notes with words
+  const notes = [];
+  for (let bar = 0; bar < 8; bar++) for (let q = 0; q < 4; q++) {
+    notes.push([60 + q, bar * 4 + q, 1, 1, `word${q}`, bar > 0 && q === 0 ? '|' : '']);
+  }
+  const svg = renderStaff(notes, { rhythm: true, lyrics: true, width: 340, final: true });
+  const lines = svg.split('<svg').length - 1;
+  assert.ok(lines >= 2, 'wraps onto several lines');
+  // every line but the first starts at a bar: count notes per line from the drawn noteheads
+  const perLine = svg.split('<svg').slice(1).map(l => (l.match(/<ellipse/g) || []).length);
+  assert.ok(perLine.every(n => n % 4 === 0), `whole bars per line: ${perLine}`);
+  assert.ok(Math.max(...perLine) - Math.min(...perLine) <= 4, 'balanced lines');
+  assert.equal((svg.match(/st-final/g) || []).length, 1, 'final barline');
+  assert.deepEqual(inferMeter(notes), { beats: 4, compound: false, pickup: 0 });
+  assert.match(svg, /class="st-time">4</);
+});
+
+test('engraving: syllables never overlap; stems follow the middle-line rule', async () => {
+  const { renderStaff } = await import('../js/notation.js');
+  const notes = [[60, 0, .25, .25, 'Constantinople'], [62, .25, .25, .25, 'everywhere'], [64, .5, .5, .5, 'x']];
+  const svg = renderStaff(notes, { rhythm: true, lyrics: true, width: 600 });
+  const xs = [...svg.matchAll(/<text x="([\d.]+)" y="[\d.]+" text-anchor="(\w+)" class="st-syl">([^<]+)</g)].map(m => [Number(m[1]), m[2], m[3]]);
+  const box = ([x, anchor, t]) => { const w = t.length * 6.3; return anchor === 'start' ? [x, x + w] : [x - w / 2, x + w / 2]; };
+  for (let i = 1; i < xs.length; i++) assert.ok(box(xs[i - 1])[1] < box(xs[i])[0], `"${xs[i - 1][2]}" and "${xs[i][2]}" don't touch`);
+  // B4 (middle line, treble) stems down; G4 stems up
+  const one = m => renderStaff([[m, 0, 1, 1, '']], { rhythm: true, part: 'Lead' });
+  const stem = svg1 => { const m = svg1.match(/<line x1="([-\d.]+)" x2="[-\d.]+" y1="([-\d.]+)" y2="([-\d.]+)" class="st-stem/); return Number(m[3]) - Number(m[2]); };
+  assert.ok(stem(one(59)) > 0, 'middle-line note: stem down');   // B3 sounding = B4 written (treble-8)
+  assert.ok(stem(one(55)) < 0, 'below the middle line: stem up');
 });

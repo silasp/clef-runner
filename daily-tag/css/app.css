@@ -181,7 +181,10 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 /* open noteheads (half, whole) stay open when coloured: only the outline changes */
 .st-note.held.cur, .st-note.held.hit, .st-note.held.miss { fill: var(--card); stroke-width: 2.4; }
 .st-acc { fill: var(--ink); font-size: 13px; }
-.st-syl { fill: var(--ink); font-size: 10.5px; font-style: italic; }
+.st-syl { fill: var(--ink); font-size: 12px; font-family: Georgia, "Times New Roman", serif; }
+.st-hyph { stroke: var(--ink); stroke-width: 1.1; }
+.st-final { fill: var(--ink); }
+.st-time { fill: var(--ink); font: 700 17px/1 Georgia, "Times New Roman", serif; }
 .st-ext { stroke: var(--ink); stroke-width: 1; }
 .st-bar { stroke: var(--ink); stroke-width: 1.2; }
 .st-tie { fill: none; stroke: var(--ink); stroke-width: 1.4; }

@@ -491,19 +491,13 @@ function staffHtml(tag, part, notes, opts = {}) {
   }
   const names = opts.names && state.settings.showNames;
   const labels = names ? notes.map(n => noteName(n[0], tag.tonic, false)) : null;
-  // long items: one staff row per ≤10 notes
-  const rows = [];
-  for (let i = 0; i < notes.length; i += 10) rows.push(i);
-  return rows.map(start => {
-    const slice = notes.slice(start, start + 10);
-    const sub = arr => arr ? arr.slice(start, start + 10) : undefined;
-    const rhythm = !!opts.force || state.settings.rhythm === 'always' || (state.settings.rhythm !== 'never' && !!opts.rhythm);
-    return renderStaff(slice, {
-      part, tonic: tag.tonic, names, labels: sub(labels), mask: sub(opts.mask), hits: sub(opts.hits),
-      highlight: opts.highlight != null ? opts.highlight - start : -1, width: 340,
-      rhythm, lyrics: opts.lyrics !== false,
-    });
-  }).join('');
+  const rhythm = !!opts.force || state.settings.rhythm === 'always' || (state.settings.rhythm !== 'never' && !!opts.rhythm);
+  // engraved lines: breaks at barlines, justified, lyrics spaced to be readable
+  return renderStaff(notes, {
+    part, tonic: tag.tonic, names, labels, mask: opts.mask, hits: opts.hits,
+    highlight: opts.highlight != null ? opts.highlight : -1, width: opts.width || 340,
+    rhythm, lyrics: opts.lyrics !== false, final: !!opts.final,
+  });
 }
 
 function playButtons(tag, ex, notes, { harmony = true, track = true } = {}) {

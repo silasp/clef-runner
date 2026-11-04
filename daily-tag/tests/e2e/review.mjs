@@ -61,8 +61,9 @@ assert.equal(await page.evaluate(id => JSON.parse(localStorage.getItem('daily-ta
 await page.click('[data-op=dot]');
 await page.click('[data-len="0.5"]');
 await page.click('.nchip >> nth=1');
+const barsBefore = await page.locator('.ours .st-bar').count();
 await page.click('[data-op=bar]');
-assert.equal(await page.locator('.ours .st-bar').count(), 1, 'barline drawn');
+assert.equal(await page.locator('.ours .st-bar').count(), barsBefore + 1, 'barline drawn');
 await page.click('[data-op=autobar]');
 await page.click('.nchip >> nth=0');
 await page.click('[data-op=down]');      // the split pair is a semitone apart now: make them equal again

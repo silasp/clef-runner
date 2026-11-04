@@ -248,7 +248,7 @@ function render() {
     <div class="rv-grid">
       <section class="panel ours">
         <h2>Ours</h2>
-        <div class="staff-wrap">${env.staffHtml(tag, view.part, notes, { names: true, rhythm: true, highlight: sel - from, force: true })}</div>
+        <div class="staff-wrap">${staffFor(tag, notes, sel - from)}</div>
         <div class="btns center">
           <button class="sm" data-act="play">▶ Ours</button>
           ${tag.tracks && tag.tracks[view.part] ? `<button class="sm" data-act="real">🎙 Real</button>
@@ -331,6 +331,7 @@ function render() {
     <p class="center"><button class="link danger" data-act="hide">🚩 This tag is too wrong to fix — hide it</button></p>
   </main>`;
   bind();
+  refit();
   const imgEl = $('.sheet img', app);
   if (imgEl) imgEl.onerror = () => { imgEl.closest('.sheet-box').outerHTML = '<p class="muted">Couldn’t load a preview.</p>'; };
   if (tag.tracks && tag.tracks[view.part]) audio.preloadTrack(tag.tracks[view.part]);
@@ -516,6 +517,32 @@ function bind() {
   };
 }
 
+/** The width the score is drawn at: the panel's real width, so wide screens fit more bars per line. */
+function staffWidth() {
+  const w = env.app.querySelector('.ours .staff-wrap');
+  if (w && w.clientWidth > 200) return Math.round(w.clientWidth);
+  const vw = typeof innerWidth === 'number' ? innerWidth : 375;
+  return Math.round(vw >= 720 ? Math.min(1100, vw) / 2 - 50 : vw - 52);
+}
+
+function staffFor(tag, notes, highlight) {
+  view.drawnWidth = staffWidth();
+  return env.staffHtml(tag, view.part, notes, { names: true, rhythm: true, highlight, force: true, final: true, width: view.drawnWidth });
+}
+
+/** Redraw the score if the panel turned out wider or narrower than estimated. */
+function refit() {
+  if (!view) return;
+  const wrap = env.app.querySelector('.ours .staff-wrap');
+  const tag = env.tag(view.id);
+  if (!wrap || !tag || Math.abs(wrap.clientWidth - view.drawnWidth) < 12) return;
+  wrap.innerHTML = staffFor(tag, view.notes.slice(view.range[0], view.range[1]), view.sel - view.range[0]);
+}
+if (typeof window !== 'undefined') {
+  let t = null;
+  window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { if (location.hash.startsWith('#review/')) refit(); }, 150); });
+}
+
 /** Light up note i (index into the whole part; -1 = none) on the chips,
  *  the staff and the keyboard, as the synth or the real singer reaches it. */
 function highlight(i) {
@@ -526,7 +553,7 @@ function highlight(i) {
   const wrap = app.querySelector('.ours .staff-wrap');
   if (wrap && tag) {
     const on = i >= from && i < to;
-    wrap.innerHTML = env.staffHtml(tag, view.part, view.notes.slice(from, to), { names: true, rhythm: true, highlight: on ? i - from : view.sel - from, force: true });
+    wrap.innerHTML = staffFor(tag, view.notes.slice(from, to), on ? i - from : view.sel - from);
     wrap.classList.toggle('live', on);
   }
   if (view.kb) view.kb.light(i >= 0 && view.notes[i] ? view.notes[i][0] : null);
