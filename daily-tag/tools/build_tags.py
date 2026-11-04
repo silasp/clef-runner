@@ -208,6 +208,12 @@ def sheet_reading(work, tid):
     return parts
 
 
+def clean_audio(info):
+    """Voices separated almost perfectly and both pitch trackers agree."""
+    ag = info.get('agree') or {}
+    return info.get('resid', 1) <= 0.05 and ag and float(np.mean(list(ag.values()))) >= 0.75 and min(ag.values()) >= 0.5
+
+
 def heard_text(work, tid):
     """No lyrics on record: the words speech recognition heard the Lead sing."""
     wf = f'{work}/words/{tid}.json'
@@ -547,6 +553,11 @@ def decide(t, work, a):
         mean, shift, sc = (0.0, 0, {}) if not audio else agreement(audio, sung)
         info['sheet_agree'] = {p: round(v, 2) for p, v in sc.items()}
         trusted = well_ordered(sheet) or (bool(audio) and mean >= 0.75)
+        # a clean recording that disagrees with the sheet is singing another version:
+        # follow the recording (it's what the learner hears)
+        if audio and clean_audio(info) and mean < a.max_disagree:
+            trusted = False
+            info['other_version'] = True
         info['well_ordered'] = well_ordered(sheet)
         if trusted and (not audio or mean >= a.min_sheet_agree):
             matched = bool(audio) and mean >= 0.35
@@ -557,7 +568,7 @@ def decide(t, work, a):
             timed = score_times(sheet, audio['Lead'] if matched else None, shift, score_word_anchors(sheet, heard))
             if audio or a.sheet_only:
                 return timed, ('verified' if matched and mean >= 0.75 else 'sheet'), info
-    if audio_ok:
+    if audio_ok or (audio and info.get('other_version') and plausible(audio)):
         return audio, 'audio', info
     if audio and sheet:
         return None, 'sources disagree', info
@@ -574,6 +585,8 @@ def main():
     ap.add_argument('--min-acc', type=float, default=0.8)
     ap.add_argument('--min-agree', type=float, default=0.6)
     ap.add_argument('--max-resid', type=float, default=0.12)
+    ap.add_argument('--max-disagree', type=float, default=0.35,
+                    help='with a clean recording, a sheet agreeing less than this is another version')
     ap.add_argument('--no-scores', action='store_true', help="ignore arrangers' score files (to measure the other sources)")
     ap.add_argument('--only', default='', help='comma-separated tag ids to build (for evaluation)')
     ap.add_argument('--min-sheet-agree', type=float, default=0.0,
@@ -606,8 +619,14 @@ def main():
             if not placed and os.path.exists(pdf):
                 import pdf_lyrics
                 try:
-                    st = pdf_lyrics.staff_lyrics(pdf)
-                    placed = pdf_lyrics.apply(parts, st) if st else []
+                    # most accurate first: music-font text (0.84 on-note), then staff lines + noteheads (0.44);
+                    # either beats speech-recognition timing (0.15) — see ml/lyrics_eval.py
+                    placed = []
+                    for reader in (pdf_lyrics.staff_lyrics_text, pdf_lyrics.staff_lyrics):
+                        st = reader(pdf)
+                        placed = pdf_lyrics.apply(parts, st) if st else []
+                        if placed:
+                            break
                     if not placed:                      # words without note positions: still the right words
                         lyr = pdf_lyrics.lyric_text(pdf, lyr) or lyr
                 except Exception:  # noqa: BLE001

@@ -110,7 +110,7 @@ def syllables(row):
     return [(s[0], s[1]) for s in out]
 
 
-def staff_lyrics(pdf):
+def staff_lyrics_text(pdf):
     """→ {'staves': [{'role': 'upper'|'lower'|part, 'cols': [...], 'syl': [(col_index, text)]}]} in reading order."""
     ws = words(pdf)
     staves, rows = layout(ws)
@@ -143,6 +143,41 @@ def _four_per_system(staves):
     return bool(big) and min(big) > 1.6 * sorted(gaps)[0]
 
 
+def align_columns(sts, union, skip=0.06):
+    """Map note columns (staff lines in reading order) to onsets. Equal counts map
+    one-to-one; otherwise a DP aligns their positions (fraction of the way through
+    the piece), allowing extra or missing columns. None if they clearly don't fit."""
+    cols = [(si, k) for si, st in enumerate(sts) for k in range(len(st['cols']))]
+    if len(cols) == len(union):
+        return {c: o for c, o in zip(cols, union)}
+    if abs(len(cols) - len(union)) > max(3, 0.25 * len(union)):
+        return None
+    total = union[-1] - union[0] or 1.0
+    # columns: position by staff line and x within it; onsets: position in beats
+    pc = []
+    for si, st in enumerate(sts):
+        x0 = min(st['cols']) if st['cols'] else 0
+        x1 = max(st['cols']) if st['cols'] else 1
+        for k, x in enumerate(st['cols']):
+            pc.append((si + (x - x0) / max(1e-6, x1 - x0) * 0.98) / len(sts))
+    po = [(o - union[0]) / total for o in union]
+    n, m = len(pc), len(po)
+    import numpy as _np
+    D = _np.full((n + 1, m + 1), _np.inf); D[0, :] = _np.arange(m + 1) * skip; D[:, 0] = _np.arange(n + 1) * skip
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            D[i, j] = min(D[i - 1, j - 1] + abs(pc[i - 1] - po[j - 1]), D[i - 1, j] + skip, D[i, j - 1] + skip)
+    out, i, j = {}, n, m
+    while i > 0 and j > 0:
+        if abs(D[i, j] - (D[i - 1, j - 1] + abs(pc[i - 1] - po[j - 1]))) < 1e-9:
+            out[cols[i - 1]] = union[j - 1]; i -= 1; j -= 1
+        elif abs(D[i, j] - (D[i - 1, j] + skip)) < 1e-9:
+            i -= 1
+        else:
+            j -= 1
+    return out
+
+
 def onsets(notes):
     """Cumulative beat onsets of a part's notes (rests included)."""
     t, out = 0.0, []
@@ -163,14 +198,20 @@ def apply(parts, staves):
     for role, members in roles:
         sts = [s for s in staves if s['role'] == role]
         cols = sum(len(s['cols']) for s in sts)
-        union = sorted({o for p in members for o in onsets(parts[p])})
-        if not cols or len(union) != cols:
+        notes_only = staves[0].get('notes_only')
+        union = sorted({o for p in members for n, o in zip(parts[p], onsets(parts[p]))
+                        if not (notes_only and len(n) > 5 and 'r' in n[5])})
+        if not cols or not union:
+            continue
+        colmap = align_columns(sts, union)
+        if colmap is None:
             continue                                      # columns and onsets don't line up: leave this staff
-        m, base = {}, 0
-        for s in sts:
-            for k, text in s['syl']:
-                m.setdefault(union[base + k], text)
-            base += len(s['cols'])
+        m = {}
+        for si, st in enumerate(sts):
+            for k, text in st['syl']:
+                o = colmap.get((si, k))
+                if o is not None:
+                    m.setdefault(o, text)
         maps[role] = (m, len(union))
     if not maps:
         return []
@@ -194,6 +235,177 @@ def apply(parts, staves):
                     last = nt[4]
             done.append(p)
     return done
+
+
+# ---------------------------------------------------------------- font-independent reader
+MUSIC_FONT = re.compile(r'maestro|opus|capella|mscore|bravura|petrucci|jazz|sonata|engraver|leland|emmentaler|feta|'
+                        r'november|norfolk|fughetta|helsinki|reprise|inkpen|broadway|tamburo|anastasia|musical|'
+                        r'finale ?(?!lyric)|sibelius|musescore|lassus|toccata|bach|golden', re.I)
+LYRIC_CHARS = re.compile(r"[A-Za-z’'‘\-–,.!?;:()\"“”…]+")
+
+
+def _staves(page):
+    """Five evenly spaced long horizontal lines → staves [{'top','bottom','sp','x0','x1'}]."""
+    ys = {}
+    for d in page.get_drawings():
+        for it in d['items']:
+            if it[0] == 'l':
+                a, b = it[1], it[2]
+                if abs(a.y - b.y) < 0.4 and abs(b.x - a.x) > 30:
+                    ys.setdefault(round((a.y + b.y) / 2, 1), []).append((min(a.x, b.x), max(a.x, b.x)))
+            elif it[0] == 're':
+                r = it[1]
+                if r.height < 1.3 and r.width > 30:
+                    ys.setdefault(round(r.y0 + r.height / 2, 1), []).append((r.x0, r.x1))
+    lines = sorted((y, min(v[0] for v in segs), max(v[1] for v in segs)) for y, segs in ys.items()
+                   if sum(v[1] - v[0] for v in segs) > 120)
+    staves, i = [], 0
+    while i + 4 < len(lines):
+        grp = lines[i:i + 5]
+        gaps = [b[0] - a[0] for a, b in zip(grp, grp[1:])]
+        if 2.5 < min(gaps) and max(gaps) - min(gaps) < 0.8 and max(gaps) < 14:
+            staves.append({'top': grp[0][0], 'bottom': grp[-1][0], 'sp': sum(gaps) / 4,
+                           'x0': min(g[1] for g in grp), 'x1': max(g[2] for g in grp)})
+            i += 5
+        else:
+            i += 1
+    return staves
+
+
+def _noteheads(page, staves):
+    """Notehead x positions per staff: music-font glyphs about a notehead wide that occur at
+    several heights, plus small filled shapes the size of a notehead (notes drawn as paths)."""
+    raw = page.get_text('rawdict')
+    spans = [sp for b in raw['blocks'] for l in b.get('lines', []) for sp in l['spans']]
+    # a font is a music font by name, or by content (mostly music symbols / private-use codes)
+    SYM = set('œ˙wW&?Vbn#ŒÓ‰≈∑jJ>Uu.ÏÚú') | set('\uf000')
+    per_font = {}
+    for sp in spans:
+        f = per_font.setdefault(sp['font'], [0, 0])
+        for c in sp['chars']:
+            f[1] += 1
+            f[0] += c['c'] in SYM or 0xE000 <= ord(c['c']) <= 0xF8FF
+    music_fonts = {f for f, (sym, n) in per_font.items()
+                   if (MUSIC_FONT.search(f) and 'lyric' not in f.lower()) or (n and sym / n >= 0.6)}
+    music = [sp for sp in spans if sp['font'] in music_fonts]
+    by_code = {}
+    for sp in music:
+        for c in sp['chars']:
+            x0, _, x1, _ = c['bbox']
+            by_code.setdefault(c['c'], []).append(((x0 + x1) / 2, c['origin'][1], x1 - x0))
+    heads = [[] for _ in staves]
+    def staff_of(y):
+        for k, st in enumerate(staves):
+            if st['top'] - 4 * st['sp'] <= y <= st['bottom'] + 4 * st['sp']:
+                return k
+        return None
+    for code, occ in by_code.items():
+        ks = [staff_of(y) for _, y, _ in occ]
+        occ = [(x, y, w, k) for (x, y, w), k in zip(occ, ks) if k is not None]
+        if not occ:
+            continue
+        sp_ = staves[occ[0][3]]['sp']
+        wid = sorted(w for _, _, w, _ in occ)[len(occ) // 2] / sp_
+        heights = len({round(y / (sp_ / 2)) for _, y, _, _ in occ})
+        if 1.0 <= wid <= 1.9 and heights >= 3 and code.strip() and not code.isdigit():
+            for x, y, w, k in occ:
+                heads[k].append(x)
+    for d in page.get_drawings():              # notes drawn as shapes (e.g. MuseScore PDFs)
+        if not d.get('fill'):
+            continue
+        r = d['rect']
+        k = staff_of((r.y0 + r.y1) / 2)
+        if k is None:
+            continue
+        sp_ = staves[k]['sp']
+        if 1.0 <= r.width / sp_ <= 1.7 and 0.6 <= r.height / sp_ <= 1.2:
+            heads[k].append((r.x0 + r.x1) / 2)
+    return heads, music
+
+
+def _systems(staves):
+    if len(staves) < 2:
+        return []
+    gaps = [b['top'] - a['bottom'] for a, b in zip(staves, staves[1:])]
+    lo, hi = min(gaps), max(gaps)
+    cut = (lo + hi) / 2 if hi > 1.3 * lo else hi + 1
+    systems, cur = [], [0]
+    for i, g in enumerate(gaps):
+        if g > cut:
+            systems.append(cur); cur = []
+        cur.append(i + 1)
+    systems.append(cur)
+    return systems
+
+
+def staff_lyrics(pdf):
+    """Font-independent: staves from staff lines, notes from note-sized glyphs or shapes,
+    lyric lines from the words under each staff. Falls back to the text-glyph reader."""
+    try:
+        import fitz
+    except ImportError:
+        return staff_lyrics_text(pdf)
+    try:
+        page = fitz.open(pdf)[0]
+    except Exception:  # noqa: BLE001
+        return None
+    staves = _staves(page)
+    systems = _systems(staves)
+    if not staves or not systems or any(len(s) not in (2, 4) for s in systems):
+        return staff_lyrics_text(pdf)
+    heads, music = _noteheads(page, staves)
+    for st, xs in zip(staves, heads):
+        cols = []
+        for x in sorted(xs):
+            if cols and x - cols[-1][0] < 1.6 * st['sp']:     # a chord's seconds sit side by side
+                cols[-1].append(x)
+            else:
+                cols.append([x])
+        st['cols'] = [sum(c) / len(c) for c in cols]
+        st['syl'] = []
+        st['y'] = st['top']
+    # lyric words: text (not music glyphs) in rows under a staff
+    mboxes = [c['bbox'] for sp in music for c in sp['chars']]
+    words_ = []
+    for x0, y0, x1, y1, w, *_ in page.get_text('words'):
+        if not LYRIC_CHARS.fullmatch(w) or (len(w) == 1 and w not in 'aAIoO'):
+            continue
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        if any(b[0] <= cx <= b[2] and b[1] <= cy <= b[3] and (b[3] - b[1]) > 3 * (y1 - y0) for b in mboxes[:0]):
+            continue
+        if w.strip('().,!?:;').lower() in LABELS and staves and x1 < min(s['x0'] for s in staves) + 15:
+            continue                                          # part names in the margin, not lyrics
+        words_.append({'x0': x0, 'x1': x1, 'y': (y0 + y1) / 2, 'y0': y0, 'y1': y1, 't': w})
+    rows = []
+    for w in sorted(words_, key=lambda w: (round(w['y']), w['x0'])):
+        if rows and abs(rows[-1][0] - w['y']) < 3:
+            rows[-1][1].append(w)
+        else:
+            rows.append([w['y'], [w]])
+    boiler = re.compile(r'copyright|©|rights|reserved|arrang|words|music by|www\.|\.com|used by|permission|printed', re.I)
+    for y, r in rows:
+        above = [st for st in staves if st['bottom'] < y]
+        if not above:
+            continue
+        st = max(above, key=lambda s: s['bottom'])
+        if y - st['bottom'] > 9 * st['sp'] or boiler.search(' '.join(w['t'] for w in r)) or not st['cols']:
+            continue
+        nxt = [s for s in staves if s['top'] > st['bottom']]
+        if nxt and y > min(s['top'] for s in nxt):
+            continue
+        for text, x in syllables(sorted(r, key=lambda w: w['x0'])):
+            k = min(range(len(st['cols'])), key=lambda i: abs(st['cols'][i] - x) + (0 if st['cols'][i] <= x + 4 else 6))
+            st['syl'].append((k, text))
+    order = [i for sysm in systems for i in sysm]
+    out = []
+    for sysm in systems:
+        for j, i in enumerate(sysm):
+            st = staves[i]
+            st['role'] = ('upper' if j == 0 else 'lower') if len(sysm) == 2 else PARTS[j]
+            out.append(st)
+    st0 = out
+    st0[0]['notes_only'] = True
+    return st0
 
 
 def lyric_text(pdf, known=''):

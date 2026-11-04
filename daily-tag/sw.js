@@ -1,6 +1,6 @@
 // Offline cache for the app shell + tag data. Learning-track audio is
 // streamed from barbershoptags.com and not cached.
-const CACHE = 'daily-tag-v16';
+const CACHE = 'daily-tag-v17';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png',
   'data/tags.json', 'data/corrections.json',
