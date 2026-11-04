@@ -172,3 +172,13 @@ test('withRests puts written rests back among sung notes; copyPart copies parts'
   assert.deepEqual(ph.map(n => [n[0], n[1]]), [[60, 0], [65, 1.5]], 'only the phrase window is replaced');
   assert.equal(lead[0][0], 60, 'source untouched');
 });
+
+test('merging keeps other parts: a newer fix to one part never drops the rest', () => {
+  const remote = { 5: { ts: 10, parts: { Lead: { ok: true, notes: [[60, 0, 1, 1, 'a']] }, Tenor: { ok: true, notes: [[64, 0, 1, 1, 'a']] } } } };
+  const local = { 5: { ts: 20, parts: { Bass: { ok: true } } } };
+  const m = mergeStores(remote, local);
+  assert.deepEqual(Object.keys(m['5'].parts).sort(), ['Bass', 'Lead', 'Tenor']);
+  assert.equal(m['5'].ts, 20);
+  const older = mergeStores(remote, { 5: { ts: 5, parts: { Lead: { ok: false, notes: [[61, 0, 1, 1, 'x']] } } } });
+  assert.equal(older['5'].parts.Lead.notes[0][0], 60, 'older local fix loses to the repo');
+});

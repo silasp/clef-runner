@@ -141,7 +141,7 @@ export function submit() {
 }
 
 // ---------------------------------------------------------------- review screen
-/** #review/<id>[/<Part>[/<phrase>]] */
+/** #review/<id>[/<Part>[/<phrase>]] — always the whole part; <phrase> preselects its first note. */
 export function showReview(args) {
   const [id, partArg, phraseArg] = args.split('/');
   const tag = env.tag(id);
@@ -151,18 +151,17 @@ export function showReview(args) {
     return;
   }
   const part = PARTS.includes(partArg) ? partArg : (view && view.id === id ? view.part : 'Lead');
-  if (!view || view.id !== id || view.part !== part) {
+  const fresh = !view || view.id !== id || view.part !== part;
+  if (fresh) {
     const notes = partNotes(id, part);
-    view = { id, part, notes, saved: JSON.stringify(notes), undo: [], sel: 0, phrase: 0, whole: false, range: null };
+    view = { id, part, notes, saved: JSON.stringify(notes), undo: [], sel: 0, whole: true, range: null };
+    // coming from a lesson phrase: start on that phrase's first note
+    if (phraseArg != null && phraseArg !== '' && phraseArg !== 'all') {
+      const r = ranges(notes)[Math.max(0, Number(phraseArg) || 0)];
+      if (r) view.sel = r[0];
+    }
   }
-  const rs = ranges(view.notes);
-  if (phraseArg === 'all') view.whole = true;
-  else if (phraseArg != null && phraseArg !== '') { view.whole = false; view.phrase = Math.min(rs.length - 1, Math.max(0, Number(phraseArg) || 0)); }
-  if (!view.range || view.rangeKey !== `${view.whole}:${view.phrase}`) {
-    view.range = view.whole ? [0, view.notes.length] : rs[Math.min(view.phrase, rs.length - 1)];
-    view.rangeKey = `${view.whole}:${view.phrase}`;
-    view.sel = view.range[0];
-  }
+  view.range = [0, view.notes.length];
   render();
 }
 
@@ -173,10 +172,8 @@ function render() {
   const tag = env.tag(view.id);
   const [from, to] = view.range;
   const notes = slice();
-  const rs = ranges(view.notes);
   const img = sheetImage(tag);
   const dirty = JSON.stringify(view.notes) !== view.saved;
-  const lastPhrase = view.whole || view.phrase >= rs.length - 1;
   const nextPart = PARTS[PARTS.indexOf(view.part) + 1];
   const pend = C.pending(env.store(), env.remote()).length;
   const sel = Math.min(Math.max(view.sel, from), to - 1);
@@ -193,12 +190,6 @@ function render() {
     <h1>${esc(tag.title)}</h1>
     <div class="muted small">#${tag.rank} · our notes ${sourceLabel}${tag.corrected ? ' · corrected' : ''}</div>
     <div class="tabs" role="tablist">${PARTS.map(p => `<button role="tab" class="tab ${p === view.part ? 'on' : ''}" data-part="${p}">${p} <b>${partBadge(view.id, p)}</b></button>`).join('')}</div>
-    <div class="phrase-nav">
-      <button class="sm" data-act="prev" ${!view.whole && view.phrase > 0 ? '' : 'disabled'} aria-label="Previous phrase">‹</button>
-      <span>${view.whole ? `Whole ${view.part} part` : `Phrase ${view.phrase + 1} of ${rs.length}`}</span>
-      <button class="sm" data-act="next" ${!view.whole && view.phrase < rs.length - 1 ? '' : 'disabled'} aria-label="Next phrase">›</button>
-      <button class="sm" data-act="whole">${view.whole ? 'Phrases' : 'Whole part'}</button>
-    </div>
 
     <div class="rv-grid">
       <section class="panel ours">
@@ -263,7 +254,6 @@ function render() {
           <select name="copyFrom" aria-label="Part to copy">${PARTS.filter(p => p !== view.part).map(p => `<option ${p === view.copyFrom ? 'selected' : ''}>${p}</option>`).join('')}</select>
           <select name="copyShift" aria-label="Octave">${[[0, 'same pitch'], [12, 'octave up'], [-12, 'octave down']].map(([v, l]) => `<option value="${v}" ${v === (view.copyShift || 0) ? 'selected' : ''}>${l}</option>`).join('')}</select>
           <span class="btns">
-            ${view.whole ? '' : '<button class="sm" data-act="copy-phrase">Copy this phrase</button>'}
             <button class="sm" data-act="copy-part">Copy whole part</button>
           </span>
         </div>
@@ -281,7 +271,7 @@ function render() {
 
     <div class="btns rv-actions">
       ${dirty ? '<button data-act="revert">Discard my edits</button>' : ''}
-      <button class="primary go" data-act="ok">${dirty ? 'Save' : '✓ Correct'}${lastPhrase ? (back === 'lesson' ? ' → back to lesson' : nextPart ? ` → ${nextPart}` : ' → done') : ' → next phrase'}</button>
+      <button class="primary go" data-act="ok">${dirty ? 'Save' : '✓ Correct'}${back === 'lesson' ? ' → back to lesson' : nextPart ? ` → ${nextPart}` : ' → done'}</button>
     </div>
     <p class="center"><button class="link danger" data-act="hide">🚩 This tag is too wrong to fix — hide it</button></p>
   </main>`;
@@ -304,9 +294,16 @@ function edit(fn, { keepSel = false, then = null } = {}) {
 }
 
 /** Keep the edit applied on this device (unsent until Submit). */
+/** The part as the repo has it (generated notes plus the repo's corrections). */
+function baseNotes() {
+  const r = env.remote()[view.id];
+  const rn = r && !r.hide && r.parts && r.parts[view.part] && r.parts[view.part].notes;
+  return rn || env.raw(view.id).parts[view.part];
+}
+
 function persistEdit() {
   const store = env.store();
-  const original = env.raw(view.id).parts[view.part];
+  const original = baseNotes();
   if (C.sameNotes(view.notes, original)) {
     const pe = store[view.id] && store[view.id].parts[view.part];
     if (pe) { delete pe.notes; if (!pe.ok) C.forget(store, view.id, view.part); }
@@ -323,9 +320,6 @@ function bind() {
   bindSubmit(app);
   const go = (phrase, part = view.part) => { location.hash = `review/${view.id}/${part}/${phrase}`; };
   app.querySelectorAll('[data-part]').forEach(b => b.onclick = () => go(0, b.dataset.part));
-  $('[data-act=prev]', app).onclick = () => go(view.phrase - 1);
-  $('[data-act=next]', app).onclick = () => go(view.phrase + 1);
-  $('[data-act=whole]', app).onclick = () => go(view.whole ? 0 : 'all');
   app.querySelectorAll('.nchip').forEach(b => b.onclick = () => {
     view.sel = Number(b.dataset.i);
     audio.unlock(); audio.stopAll(); audio.playNote(view.notes[view.sel][0], 0.5);
@@ -369,20 +363,10 @@ function bind() {
   cf.onchange = () => { view.copyFrom = cf.value; };
   cs.onchange = () => { view.copyShift = Number(cs.value); };
   const source = () => { const t = env.tag(view.id); return (t.written || t.parts)[cf.value]; };
-  const cpPhrase = $('[data-act=copy-phrase]', app);
-  if (cpPhrase) cpPhrase.onclick = () => {
-    const [a, b] = view.range;
-    const t0 = view.notes[a][1], last = view.notes[b - 1], t1 = Math.max(last[1] + last[2], (view.notes[b] || [Infinity])[1]);
-    if (!source().some(n => n[1] >= t0 - 0.01 && n[1] < t1 - 0.01)) { env.toast(`${cf.value} has no notes in this phrase`); return; }
-    edit(n => C.copyPart(n, source(), { shift: Number(cs.value), t0, t1 }), {
-      keepSel: true,
-      then: () => { view.sel = view.range[0]; },
-    });
-  };
   $('[data-act=copy-part]', app).onclick = () => {
     if (!window.confirm(`Replace the whole ${view.part} part with the ${cf.value} part${Number(cs.value) ? ` (${Number(cs.value) > 0 ? 'an octave up' : 'an octave down'})` : ''}? Undo can bring it back.`)) return;
     edit(n => C.copyPart(n, source(), { shift: Number(cs.value) }), {
-      then: () => { view.range = view.whole ? [0, view.notes.length] : ranges(view.notes)[0]; view.phrase = 0; view.sel = 0; view.rangeKey = `${view.whole}:0`; },
+      then: () => { view.range = [0, view.notes.length]; view.sel = 0; },
     });
   };
   const per = $('select[name=perBar]', app);
@@ -447,18 +431,16 @@ function bind() {
   // decisions
   const rv = $('[data-act=revert]', app);
   if (rv) rv.onclick = () => {
-    view.notes = env.raw(view.id).parts[view.part].map(n => [...n]);
-    view.undo = []; view.range = null; view.rangeKey = null;
+    view.notes = baseNotes().map(n => [...n]);
+    view.undo = []; view.sel = 0;
     persistEdit();
     showReview(`${view.id}/${view.part}/0`);
   };
   $('[data-act=ok]', app).onclick = () => {
     audio.stopAll();
-    const rs = ranges(view.notes);
-    if (!view.whole && view.phrase < rs.length - 1) { go(view.phrase + 1); return; }
     // part done: record it as checked (with any edits)
     const store = env.store();
-    const original = env.raw(view.id).parts[view.part];
+    const original = baseNotes();
     C.recordPart(store, view.id, view.part, { notes: C.sameNotes(view.notes, original) ? null : view.notes, ok: true });
     if (C.sameNotes(view.notes, original) && store[view.id].parts[view.part]) delete store[view.id].parts[view.part].notes;
     env.save({ rebuild: true });

@@ -280,11 +280,18 @@ export function pending(local, remote, { includeSubmitted = false } = {}) {
   });
 }
 
-/** Merge: local entries win when newer than the repo's. */
+/** Merge: newer entries win, part by part (a fix to one part never drops
+ *  the other parts' fixes). */
 export function mergeStores(remote, local) {
   const out = JSON.parse(JSON.stringify(remote || {}));
-  for (const [id, e] of Object.entries(local || {})) {
-    if (!out[id] || (out[id].ts || 0) < (e.ts || 0)) out[id] = JSON.parse(JSON.stringify(e));
+  for (const [id, e0] of Object.entries(local || {})) {
+    const e = JSON.parse(JSON.stringify(e0));
+    const r = out[id];
+    if (!r) { out[id] = e; continue; }
+    const newer = (r.ts || 0) < (e.ts || 0);
+    const [older, latest] = newer ? [r, e] : [e, r];
+    out[id] = { ...older, ...latest, parts: { ...(older.parts || {}), ...(latest.parts || {}) } };
+    if (!newer && !r.submitted) delete out[id].submitted;
   }
   return out;
 }
