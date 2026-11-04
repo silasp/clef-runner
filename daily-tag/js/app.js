@@ -7,7 +7,7 @@ import { review, dayNumber, dueCards, cueMask, LEARNED_LEVEL, MEMORISED_LEVEL } 
 import { XP, addXp, goalProgress, level as levelOf, checkBadges, setSkip, capabilities, rollStreak, BADGES, initialState } from './game.js';
 import { load, save, exportJson, importJson } from './store.js';
 import { renderStaff, renderContour } from './notation.js';
-import { mountKeyboard, rangeFor } from './keyboard.js';
+import { mountKeyboard, rangeFor, hasKeyboard } from './keyboard.js';
 import { framesToNotes, alignPitches, lyricMatch, combineScores } from './scoring.js';
 import * as audio from './audio.js';
 import { listen, hasMic, hasSpeech } from './mic.js';
@@ -631,7 +631,7 @@ const RENDER = {
     body.innerHTML = `
       <p class="prompt">Listen — which shape is the ${ex.part} line?</p>
       <div class="btns center"><button class="big-play" data-act="hear">🔊</button></div>
-      <div class="options col">${q.options.map((v, i) => `<button class="opt contour-opt" data-i="${i}">${renderContour(v)}</button>`).join('')}</div>`;
+      <div class="options col">${q.options.map((v, i) => `<button class="opt contour-opt" data-i="${i}">${renderContour(v, { range: q.range })}</button>`).join('')}</div>`;
     const play = () => { audio.stopAll(); audio.playNotes(notes, { even: true }); };
     $('[data-act=hear]', body).onclick = play;
     setTimeout(play, 250);
@@ -651,14 +651,17 @@ const RENDER = {
     body.innerHTML = `
       <p class="prompt">Hear the chord — tap <b>your ${ex.part} note</b>.</p>
       <div class="btns center"><button class="big-play" data-act="hear">🔊</button><button class="sm" data-act="hint">💡 Hint</button></div>
-      <div class="kb-host"></div>`;
+      <div class="kb-host"></div>${typingHelp(false)}`;
     let tries = 0, hinted = false;
     const play = () => audio.playChord(chord, 1.8, hinted ? q.answer : null);
     $('[data-act=hear]', body).onclick = play;
     $('[data-act=hint]', body).onclick = () => { hinted = true; audio.playNote(q.answer, 0.8); };
     setTimeout(play, 250);
     const kb = mountKeyboard($('.kb-host', body), {
-      lo, hi, tonic: tag.tonic, labels: state.settings.showNames, onKey: m => {
+      lo, hi, tonic: tag.tonic, labels: state.settings.showNames,
+      typing: true, target: () => q.answer,
+      keys: { h: () => $('[data-act=hint]', body)?.click(), ' ': () => $('[data-act=hear]', body)?.click() },
+      onKey: m => {
         audio.playNote(m, 0.35);
         if (m === q.answer) {
           kb.flash(m, 'right');
@@ -718,7 +721,7 @@ function tapExercise({ ex, tag, notes, body, finish, cue }, { guided, intro }) {
     <div class="staff-wrap"></div>
     ${lyr && cue < 5 && !timedLyrics(notes) ? `<p class="lyric small">“${esc(lyr)}”</p>` : ''}
     <div class="btns center">${caps().canListen ? '<button class="sm" data-act="pipe">🎵 Start note</button>' : ''}<button class="sm" data-act="hint">💡 Reveal next</button></div>
-    <div class="kb-host"></div>`;
+    <div class="kb-host"></div>${typingHelp()}`;
   const draw = () => {
     const hitArr = hits.map(h => h == null ? undefined : h);
     $('.staff-wrap', body).innerHTML = staffHtml(tag, ex.part, notes, {
@@ -730,7 +733,10 @@ function tapExercise({ ex, tag, notes, body, finish, cue }, { guided, intro }) {
   const pipe = $('[data-act=pipe]', body);
   if (pipe) pipe.onclick = () => audio.pitchPipe(midis[0]);
   const kb = mountKeyboard($('.kb-host', body), {
-    lo, hi, tonic: tag.tonic, labels: state.settings.showNames && cue <= 2, onKey: m => {
+    lo, hi, tonic: tag.tonic, labels: state.settings.showNames && cue <= 2,
+    typing: true, target: () => (i < n ? midis[i] : null),
+    keys: { h: () => $('[data-act=hint]', body)?.click(), ' ': () => $('[data-act=pipe]', body)?.click() },
+    onKey: m => {
       if (i >= n) return;
       if (caps().canListen) audio.playNote(m, 0.4);
       if (m === midis[i]) {
@@ -848,6 +854,12 @@ function singExercise({ ex, tag, notes, body, finish, cue }) {
 }
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/** On a computer, say how to type notes. */
+function typingHelp(reveal = true) {
+  if (!hasKeyboard()) return '';
+  return `<p class="muted small center typing-help">⌨️ Type note names <kbd>A</kbd>–<kbd>G</kbd> (in the key) · <kbd>Shift</kbd> ♯ · <kbd>Alt</kbd> ♭ · ${reveal ? '<kbd>H</kbd> reveal · <kbd>Space</kbd> start note' : '<kbd>H</kbd> hint · <kbd>Space</kbd> replay'}</p>`;
+}
 
 /** True when these notes carry per-note syllables from the lyric alignment. */
 function timedLyrics(notes) {

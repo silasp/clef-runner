@@ -21,6 +21,7 @@ jobs:
           python3 -m http.server 8080 &
           sleep 1
           npm run test:e2e
+          node tests/e2e/typing.mjs
           node tests/e2e/review.mjs
           node tests/e2e/sing.mjs 0 Lead
           WRONG=1 node tests/e2e/sing.mjs 0 Lead

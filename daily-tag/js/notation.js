@@ -430,7 +430,7 @@ function drawLine(notes, a, b, o) {
     for (let ly = bottom + gap; ly <= y + 0.1; ly += gap) s += `<line x1="${x - 8.5}" x2="${x + 8.5}" y1="${ly}" y2="${ly}" class="st-line"/>`;
     for (let ly = topLine - gap; ly >= y - 0.1; ly -= gap) s += `<line x1="${x - 8.5}" x2="${x + 8.5}" y1="${ly}" y2="${ly}" class="st-line"/>`;
     let cls = 'st-note';
-    if (hits) cls += hits[i] ? ' hit' : ' miss';
+    if (hits && hits[i] != null) cls += hits[i] ? ' hit' : ' miss';   // notes not reached yet stay plain
     if (isCur) cls += ' cur';
     let hollow;
     if (rhythm) {
@@ -564,8 +564,9 @@ function hyphens(x1, x2, y) {
 }
 
 /** Simple contour (melodic shape) as an SVG polyline — used for "which did you hear?". */
-export function renderContour(midis, { width = 260, height = 46 } = {}) {
-  const lo = Math.min(...midis) - 1, hi = Math.max(...midis) + 1;
+export function renderContour(midis, { width = 260, height = 46, range } = {}) {
+  // `range` [lo, hi] puts several contours on one scale, so they compare fairly
+  const lo = (range ? range[0] : Math.min(...midis)) - 1, hi = (range ? range[1] : Math.max(...midis)) + 1;
   const span = Math.max(4, hi - lo);
   const dx = width / Math.max(1, midis.length);
   const pts = midis.map((m, i) => {

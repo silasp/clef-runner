@@ -167,28 +167,43 @@ export function nextNoteQuestion(notes, rng) {
   return { shown: m.slice(0, idx), answer, options, index: idx };
 }
 
-/** "Which did you hear?": the real phrase plus 2 plausible mutations. */
+/** Up/down/same pattern of a line — what a contour shows. */
+export function shapeOf(m) {
+  return m.slice(1).map((x, i) => Math.sign(x - m[i])).join('');
+}
+
+/** "Which did you hear?": the real phrase plus 2 mutations whose up/down
+ *  shape differs from the real one and from each other (so they look
+ *  different, not just slightly shifted). */
 export function listenChooseQuestion(notes, rng) {
   const m = notes.map(n => n[0]);
   const variants = [m];
-  let guard = 0;
-  while (variants.length < 3 && guard++ < 50) {
+  const shapes = new Set([shapeOf(m)]);
+  const mutate = () => {
     const v = m.slice();
     const k = Math.floor(rng() * v.length);
-    const delta = [1, -1, 2, -2, 3, -3][Math.floor(rng() * 6)];
-    v[k] += delta;
+    v[k] += [2, -2, 3, -3, 4, -4, 5, -5][Math.floor(rng() * 8)];
     if (rng() < 0.5 && v.length > 2) {
       const k2 = (k + 1 + Math.floor(rng() * (v.length - 1))) % v.length;
-      v[k2] += [2, -2, 1][Math.floor(rng() * 3)];
+      v[k2] += [2, -2, 3, -3][Math.floor(rng() * 4)];
     }
-    if (!variants.some(x => x.join() === v.join())) variants.push(v);
+    return v;
+  };
+  for (let guard = 0; variants.length < 3 && guard < 200; guard++) {
+    const v = mutate();
+    const sh = shapeOf(v);
+    // prefer a new shape; after many tries accept any distinct line
+    if (shapes.has(sh) && guard < 150) continue;
+    if (variants.some(x => x.join() === v.join())) continue;
+    variants.push(v); shapes.add(sh);
   }
   const order = variants.map((v, i) => ({ v, correct: i === 0 }));
   for (let i = order.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [order[i], order[j]] = [order[j], order[i]];
   }
-  return { options: order.map(o => o.v), answerIndex: order.findIndex(o => o.correct) };
+  const all = variants.flat();
+  return { options: order.map(o => o.v), answerIndex: order.findIndex(o => o.correct), range: [Math.min(...all), Math.max(...all)] };
 }
 
 /** Lyric gap-fill: blank one word, 3 options. */

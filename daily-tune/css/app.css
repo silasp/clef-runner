@@ -366,3 +366,5 @@ kbd { font: inherit; font-size: .75rem; padding: 0 4px; border: 1px solid var(--
 .genre { border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; font-size: 16px; background: var(--card); color: var(--ink); }
 .chip.learning { font-size: .5rem; }
 .tagpage .staff-wrap { margin-top: 12px; }
+.typing-help { margin-top: 8px; }
+.typing-help kbd { font: inherit; font-size: .85em; padding: 0 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--card); }

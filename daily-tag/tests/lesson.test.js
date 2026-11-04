@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLesson, allowed, nextNoteQuestion, listenChooseQuestion, lyricGapQuestion, chordAt, makeRng, EXERCISE_TYPES, sungWords, lyricFor } from '../js/lesson.js';
+import { buildLesson, allowed, nextNoteQuestion, listenChooseQuestion, shapeOf, lyricGapQuestion, chordAt, makeRng, EXERCISE_TYPES, sungWords, lyricFor } from '../js/lesson.js';
 import { prepareTags, cardId } from '../js/curriculum.js';
 import { newCard } from '../js/srs.js';
 import { fakeTag } from './fixtures.js';
@@ -85,4 +85,14 @@ test('phrase words come from per-note syllables when available', () => {
   const t = { ...tags[0], parts: { ...tags[0].parts, Lead: notes }, phrases: { ...tags[0].phrases, Lead: [notes] } };
   assert.equal(lyricFor(t, 'Lead', 0), 'And loving you');
   assert.equal(lyricFor(t, 'Lead', 'all'), 'And loving you');
+});
+
+test('listen-and-choose options all have different shapes, on one scale', () => {
+  const notes = [67, 65, 62, 60, 60, 62, 64, 62, 64].map((m, i) => [m, i * 0.5, 0.5]);
+  for (let seed = 1; seed < 200; seed++) {
+    const q = listenChooseQuestion(notes, makeRng(seed));
+    assert.equal(new Set(q.options.map(shapeOf)).size, 3, `seed ${seed}`);
+    const all = q.options.flat();
+    assert.deepEqual(q.range, [Math.min(...all), Math.max(...all)]);
+  }
 });

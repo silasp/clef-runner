@@ -353,3 +353,5 @@ kbd { font: inherit; font-size: .75rem; padding: 0 4px; border: 1px solid var(--
 .fix-btn { width: 100%; padding: 12px; border-radius: 12px; border: 1px dashed var(--accent-2); background: var(--card); color: var(--ink); font-weight: 700; font-size: 1rem; }
 .unverified { margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: var(--ok-bg); font-size: .9rem; line-height: 1.4; }
 .approve-box { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin: 8px 0; padding: 8px 10px; border: 1px solid var(--good); border-radius: 10px; font-size: .9rem; }
+.typing-help { margin-top: 8px; }
+.typing-help kbd { font: inherit; font-size: .85em; padding: 0 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--card); }

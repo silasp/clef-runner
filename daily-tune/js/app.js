@@ -8,7 +8,7 @@ import { review, dayNumber, dueCards, cueMask, LEARNED_LEVEL, MEMORISED_LEVEL } 
 import { XP, addXp, goalProgress, level as levelOf, checkBadges, setSkip, capabilities, rollStreak, BADGES, initialState } from './game.js';
 import { load, save, exportJson, importJson } from './store.js';
 import { renderStaff, renderContour } from './notation.js';
-import { mountKeyboard, rangeFor } from './keyboard.js';
+import { mountKeyboard, rangeFor, hasKeyboard } from './keyboard.js';
 import { framesToNotes, alignPitches, combineScores } from './scoring.js';
 import * as audio from './audio.js';
 import { listen, hasMic } from './mic.js';
@@ -518,7 +518,7 @@ function tapExercise({ ex, tag, notes, body, finish, cue }, { guided }) {
     <p class="prompt">${prompt}</p>
     <div class="staff-wrap"></div>
     <div class="btns center">${caps().canListen ? '<button class="sm" data-act="pipe">🎵 Start note</button>' : ''}<button class="sm" data-act="hint">💡 Reveal next</button></div>
-    <div class="kb-host"></div>`;
+    <div class="kb-host"></div>${typingHelp()}`;
   const draw = () => {
     $('.staff-wrap', body).innerHTML = staffHtml(tag, notes, {
       names: showNames, mask: revealed, highlight: i, hits: hits.some(h => h != null) ? hits.map(h => h == null ? undefined : h) : undefined,
@@ -529,7 +529,10 @@ function tapExercise({ ex, tag, notes, body, finish, cue }, { guided }) {
   const pipe = $('[data-act=pipe]', body);
   if (pipe) pipe.onclick = () => audio.pitchPipe(midis[0]);
   const kb = mountKeyboard($('.kb-host', body), {
-    lo, hi, tonic: tag.tonic, labels: state.settings.showNames && cue <= 2, onKey: m => {
+    lo, hi, tonic: tag.tonic, labels: state.settings.showNames && cue <= 2,
+    typing: true, target: () => (i < n ? midis[i] : null),
+    keys: { h: () => $('[data-act=hint]', body)?.click(), ' ': () => $('[data-act=pipe]', body)?.click() },
+    onKey: m => {
       if (i >= n) return;
       if (caps().canListen) audio.playNote(m, 0.4);
       if (m === midis[i]) {
@@ -634,5 +637,11 @@ function singExercise({ tag, notes, body, finish, cue }) {
 }
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/** On a computer, say how to type notes. */
+function typingHelp() {
+  if (!hasKeyboard()) return '';
+  return '<p class="muted small center typing-help">⌨️ Type note names <kbd>A</kbd>–<kbd>G</kbd> (in the key) · <kbd>Shift</kbd> ♯ · <kbd>Alt</kbd> ♭ · <kbd>H</kbd> reveal · <kbd>Space</kbd> start note</p>';
+}
 
 boot();

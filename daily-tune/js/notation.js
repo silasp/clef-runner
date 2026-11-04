@@ -432,7 +432,7 @@ function drawLine(notes, a, b, o) {
     for (let ly = bottom + gap; ly <= y + 0.1; ly += gap) s += `<line x1="${x - 8.5}" x2="${x + 8.5}" y1="${ly}" y2="${ly}" class="st-line"/>`;
     for (let ly = topLine - gap; ly >= y - 0.1; ly -= gap) s += `<line x1="${x - 8.5}" x2="${x + 8.5}" y1="${ly}" y2="${ly}" class="st-line"/>`;
     let cls = 'st-note';
-    if (hits) cls += hits[i] ? ' hit' : ' miss';
+    if (hits && hits[i] != null) cls += hits[i] ? ' hit' : ' miss';   // notes not reached yet stay plain
     if (isCur) cls += ' cur';
     let hollow;
     if (rhythm) {
