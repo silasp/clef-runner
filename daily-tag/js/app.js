@@ -1,7 +1,7 @@
 // Daily Tag — UI shell. Screens: home (path), tag, lesson, results, settings.
 
 import { PARTS, noteName, scaleDegree, keyName } from './music.js';
-import { prepareTags, cardId, itemNotes, partStatus, learningQueue, nextNewItem, ensureCard, tagStatus, partOrder } from './curriculum.js';
+import { prepareTags, cardId, itemNotes, partStatus, learningQueue, nextNewItem, ensureCard, tagStatus, partOrder, markKnown, unmarkKnown, isKnownSkip } from './curriculum.js';
 import { buildLesson, lyricFor, nextNoteQuestion, listenChooseQuestion, lyricGapQuestion, chordAt, makeRng, allowed, EXERCISE_TYPES } from './lesson.js';
 import { review, dayNumber, dueCards, cueMask, LEARNED_LEVEL, MEMORISED_LEVEL } from './srs.js';
 import { XP, addXp, goalProgress, level as levelOf, checkBadges, setSkip, capabilities, rollStreak, BADGES, initialState } from './game.js';
@@ -193,6 +193,7 @@ function showHome() {
         ${next ? quartetBars(next.tag) : ''}
         ${learnedToday.length ? `<div class="payoff">✅ Learned today: ${learnedToday.map(m => esc((BY_ID[m.tagId] || {}).title) + ' · ' + m.part + (m.phrase === 'all' ? ' (whole part!)' : ` #${m.phrase + 1}`)).join(', ')}</div>` : ''}
         <button class="big go" data-act="start">${learnedToday.length ? 'Keep going' : 'Start'} · ~3 min</button>
+        ${next ? `<button class="link know" data-act="know">✓ I already know this ${next.part} part — skip it</button>` : ''}
         <div class="muted small">${due ? `${due} review${due > 1 ? 's' : ''} due` : 'No reviews due'}</div>
       </div>
       ${modeToggles()}
@@ -218,6 +219,8 @@ function showHome() {
     </footer>
   </main>`;
   $('[data-act=start]').onclick = () => { audio.unlock(); startLesson(); };
+  const know = $('[data-act=know]');
+  if (know) know.onclick = () => { skipKnown(next.tag, next.part); showHome(); };
   $('[data-act=fixmode]').onclick = () => fixRandomTag();
   bindModeToggles(app);
   app.querySelectorAll('.path li').forEach(li => li.onclick = () => { location.hash = 'tag/' + li.dataset.tag; });
@@ -252,7 +255,7 @@ function showTag(id) {
       ${PARTS.map(p => {
         const st = partStatus(tag, p, state.cards);
         return `<div class="part-row">
-          <div><b>${p}</b> ${partChip(tag, p)}<div class="muted small">${st.memorised}/${st.phrases} phrases memorised · ${tag.parts[p].length} notes</div></div>
+          <div><b>${p}</b> ${partChip(tag, p)}<div class="muted small">${isKnownSkip(state.cards, tag.id, p) ? `Skipped as known · review ${dueText(tag, p)} · <button class="link" data-unknow="${p}">undo</button>` : `${st.memorised}/${st.phrases} phrases memorised · ${tag.parts[p].length} notes`}${!st.learned ? ` · <button class="link" data-know="${p}">I know it</button>` : ''}</div></div>
           <div class="btns">
             <button class="sm" data-play="${p}" aria-label="Play ${p}">▶</button>
             ${tag.tracks && tag.tracks[p] ? `<button class="sm" data-track="${p}" aria-label="Real ${p} track">🎙</button>` : ''}
@@ -271,6 +274,8 @@ function showTag(id) {
   </main>`;
   $('[data-act=review]').onclick = () => { setReviewBack('tag/' + tag.id); location.hash = `review/${tag.id}/Lead/0`; };
   app.querySelectorAll('[data-learn]').forEach(b => b.onclick = () => { audio.unlock(); startLesson({ tagId: tag.id, part: b.dataset.learn }); });
+  app.querySelectorAll('[data-know]').forEach(b => b.onclick = () => { skipKnown(tag, b.dataset.know); showTag(id); });
+  app.querySelectorAll('[data-unknow]').forEach(b => b.onclick = () => { unmarkKnown(state.cards, tag.id, b.dataset.unknow); persist(); toast('Back on your learning path'); showTag(id); });
   app.querySelectorAll('[data-play]').forEach(b => b.onclick = () => {
     audio.stopAll();
     const p = b.dataset.play;
@@ -353,6 +358,19 @@ function showBadges() {
   <p class="muted small">Best streak: ${state.bestStreak} days · Streak freezes: ${state.freezes} · Phrases learned: ${state.learnedLog.length} · memorised: ${state.memorisedLog.length}</p></main>`;
 }
 
+/** "I already know this part": straight to spaced review, off the learning path. */
+function skipKnown(tag, part) {
+  markKnown(state.cards, tag.id, part, today());
+  persist();
+  toast(`Skipped ${part} ✓ — a quick review in 2 days`);
+}
+
+function dueText(tag, part) {
+  const c = state.cards[cardId(tag.id, part, 'all')];
+  const d = c ? c.due - today() : 0;
+  return d <= 0 ? 'today' : d === 1 ? 'tomorrow' : `in ${d} days`;
+}
+
 function toast(msg) {
   const t = document.createElement('div');
   t.className = 'toast'; t.textContent = msg;
@@ -421,6 +439,7 @@ function renderExercise() {
       <div class="skips">
         ${ex.type === 'sing' ? '<button class="link" data-act="skip-sing">🤐 Can\'t sing now</button>' : ''}
         ${needsListen && ex.type !== 'intro' ? '<button class="link" data-act="skip-listen">🔇 Can\'t listen now</button>' : ''}
+        ${ex.type === 'intro' && ex.phrase === 0 && !ex.review ? `<button class="link" data-act="know">✓ I know the ${ex.part} part</button>` : ''}
         ${ex.type === 'intro' || ex.type === 'guided' ? '<button class="link" data-act="fix">✎ Wrong notes or words?</button>' : ''}
         <button class="link" data-act="skip">Skip</button>
       </div>
@@ -431,6 +450,14 @@ function renderExercise() {
   if (fix) fix.onclick = () => { setReviewBack('lesson'); location.hash = `review/${tag.id}/${ex.part}/${ex.phrase}`; };
   $('[data-act=quit]').onclick = () => { if (confirm('Quit this lesson? Progress so far is kept.')) { lesson = null; location.hash = ''; } };
   $('[data-act=skip]').onclick = () => next();
+  const kn = $('[data-act=know]');
+  if (kn) kn.onclick = () => {
+    skipKnown(tag, ex.part);
+    // drop the rest of this part's new-phrase exercises; keep reviews
+    lesson.exercises = lesson.exercises.filter((e, k) => k < lesson.i || e.review || e.tagId !== tag.id || e.part !== ex.part);
+    if (lesson.i >= lesson.exercises.length && !lesson.grades.length) startLesson();
+    else renderExercise();
+  };
   const sl = $('[data-act=skip-listen]');
   if (sl) sl.onclick = () => { setSkip(state, 'listen', Date.now()); persist(); swapForSilent(ex); };
   const ss = $('[data-act=skip-sing]');

@@ -24,6 +24,18 @@ await shot('01-home');
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
 assert.ok(overflow <= 0, `page overflows horizontally by ${overflow}px`);
 
+// "I already know this part": today's item moves on; the tag page offers undo
+const firstTitle = await page.textContent('.today-title');
+await page.click('[data-act=know]');
+await page.waitForFunction(t => document.querySelector('.today-title').textContent !== t, firstTitle);
+await page.click('.path li');
+await page.waitForSelector('[data-unknow]');
+await page.click('[data-unknow]');
+await page.waitForSelector('.tagpage [data-know]');
+await page.click('.back');
+await page.waitForSelector('.today-card');
+assert.equal(await page.textContent('.today-title'), firstTitle, 'undo puts it back on the path');
+
 // go silent: can't listen + can't sing
 await page.click('[data-act=toggle-listen]');
 await page.click('[data-act=toggle-sing]');

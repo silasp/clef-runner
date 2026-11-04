@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { splitPhrases, phraseLyrics, prepareTags, nextNewItem, learningQueue, partStatus, cardId, partOrder, itemNotes, learnedParts, tagStatus } from '../js/curriculum.js';
-import { newCard } from '../js/srs.js';
+import { splitPhrases, phraseLyrics, prepareTags, nextNewItem, learningQueue, partStatus, cardId, partOrder, itemNotes, learnedParts, tagStatus, markKnown, unmarkKnown, isKnownSkip } from '../js/curriculum.js';
+import { newCard, review, dueCards } from '../js/srs.js';
 import { fakeTag } from './fixtures.js';
 
 test('splitPhrases breaks on rests / held notes and keeps 3–9 notes', () => {
@@ -74,4 +74,20 @@ test('forward chaining within a part, then on to the next part once the whole pa
   assert.equal(tagStatus(t, cards).learnedParts, 1);
   cards[cardId('1', 'Lead', 'all')].level = 4;
   assert.ok(partStatus(t, 'Lead', cards).done);
+});
+
+test('"I already know this part" moves on to the next part, reviews it later, and can be undone', () => {
+  const tags = prepareTags([fakeTag(1, 60, 8)]);
+  const cards = {};
+  markKnown(cards, '1', 'Lead', 100);
+  assert.equal(nextNewItem(tags, cards, 'Lead', 'tag-by-tag', 'melody').part, 'Bass', 'moves on to the next part');
+  assert.ok(isKnownSkip(cards, '1', 'Lead'));
+  assert.equal(dueCards(cards, 102).length, 1, 'comes back as a review');
+  assert.ok(unmarkKnown(cards, '1', 'Lead'));
+  assert.equal(nextNewItem(tags, cards, 'Lead', 'tag-by-tag', 'melody').part, 'Lead');
+  markKnown(cards, '1', 'Lead', 100);
+  const id = cardId('1', 'Lead', 'all');
+  cards[id] = review(cards[id], 0.2, 102, 3);
+  const it = nextNewItem(tags, cards, 'Lead', 'tag-by-tag', 'melody');
+  assert.deepEqual([it.part, it.phrase], ['Lead', 0], 'a missed review sends it back to learning');
 });
