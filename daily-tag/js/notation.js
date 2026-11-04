@@ -2,7 +2,13 @@
 // which note, not exact rhythm), but note length is hinted by spacing
 // and a hold-bar for long notes. Returns an SVG string (no DOM needed).
 
-import { noteName, pitchClass } from './music.js';
+import { noteName, pitchClass, keySignature } from './music.js';
+
+// key-signature positions as written steps (C4 = 28), in engraving order
+const SIG_STEPS = {
+  treble: { '♯': [38, 35, 39, 36, 33, 37, 34], '♭': [34, 37, 33, 36, 32, 35, 31] },
+  bass: { '♯': [24, 21, 25, 22, 19, 23, 20], '♭': [20, 23, 19, 22, 18, 21, 17] },
+};
 
 const LETTER_STEP = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
 
@@ -92,7 +98,9 @@ export function renderStaff(notes, o = {}) {
   const nameY = top + gap * 4 + 28;
   const sylY = nameY + (names ? 14 : 0);
   const h = (hasSyl ? sylY : nameY) + 8;
-  const left = 34;
+  const sig = o.keySig === false ? { acc: '', letters: [] } : keySignature(tonic);
+  const sigW = sig.letters.length ? sig.letters.length * 6.5 + 5 : 0;
+  const left = 34 + sigW;
   const usable = width - left - 12;
   const n = Math.max(1, notes.length);
   // horizontal positions: uniform, or proportional to √length when showing rhythm
@@ -125,7 +133,69 @@ export function renderStaff(notes, o = {}) {
     s += `<text x="5" y="${top + gap * 3.6}" class="st-clef" font-size="${gap * 6}">𝄞</text>`;
     s += `<text x="12" y="${top + gap * 4 + 18}" class="st-small">8</text>`;
   }
+  // key signature (treble-8 is written like treble, an octave up)
+  sig.letters.forEach((_, k) => {
+    const w = SIG_STEPS[clef === 'bass' ? 'bass' : 'treble'][sig.acc][k] - (clef === 'treble8' ? 7 : 0);
+    s += `<text x="${34 + k * 6.5}" y="${yOf(w) + 4}" class="st-acc st-sig">${sig.acc}</text>`;
+  });
   for (const bx of barXs) s += `<line x1="${bx}" x2="${bx}" y1="${top}" y2="${top + gap * 4}" class="st-bar"/>`;
+
+  // accidentals: only where a note differs from the key signature — and, when
+  // the part has barlines, from earlier notes in the same bar
+  const keyAcc = Object.fromEntries(sig.letters.map(L => [L, sig.acc]));
+  const barred = notes.some((nt, i) => i > 0 && flag(nt, '|'));
+  let barState = {};
+  const accidentalFor = (i, step, letter, acc) => {
+    if (bars[i]) barState = {};
+    const current = barred && step in barState ? barState[step] : (keyAcc[letter] || '');
+    if (barred) barState[step] = acc;
+    return acc === current ? '' : (acc || '♮');
+  };
+
+  // beaming: eighths and shorter within the same beat share beams instead of flags
+  const beam = new Array(notes.length).fill(null);
+  const beamGroups = [];
+  if (rhythm) {
+    let pos = 0;
+    const info = notes.map((nt, i) => {
+      if (bars[i]) pos = 0;
+      const g = rhythmGlyph(nt[3] || 1);
+      const visible = !mask || mask[i];
+      const r = { pos, g, y: null };
+      if (!flag(nt, 'r') && visible) r.y = yOf(staffPosition(nt[0], tonic).step);
+      pos += g.beats;
+      return r;
+    });
+    const beamable = i => info[i].y != null && info[i].g.stem && info[i].g.flags >= 1;
+    let cur = [];
+    const flush = () => { if (cur.length >= 2) beamGroups.push(cur); cur = []; };
+    for (let i = 0; i < notes.length; i++) {
+      if (!beamable(i)) { flush(); continue; }
+      const sameBeat = cur.length && !bars[i] && cur[cur.length - 1] === i - 1
+        && Math.floor(info[i - 1].pos + 1e-6) === Math.floor(info[i].pos + 1e-6);
+      if (!sameBeat) flush();
+      cur.push(i);
+    }
+    flush();
+    for (const grp of beamGroups) {
+      const ys = grp.map(i => info[i].y);
+      const up = ys.reduce((a, b) => a + b, 0) / ys.length >= midY;
+      const sx = grp.map(i => (up ? xs[i] + 4.8 : xs[i] - 4.8));
+      const end = k => ys[k] + (up ? -26 : 26);
+      const span = Math.max(1, sx[sx.length - 1] - sx[0]);
+      const slope = Math.max(-0.12, Math.min(0.12, (end(grp.length - 1) - end(0)) / span));
+      let at = x => end(0) + slope * (x - sx[0]);
+      // keep every stem at least 22px long
+      let shift = 0;
+      grp.forEach((_, k) => {
+        const need = up ? at(sx[k]) - (ys[k] - 22) : (ys[k] + 22) - at(sx[k]);
+        if (need > shift) shift = need;
+      });
+      const at2 = x => at(x) + (up ? -shift : shift);
+      grp.forEach((i, k) => { beam[i] = { up, sx: sx[k], end: at2(sx[k]) }; });
+      beamGroups[beamGroups.indexOf(grp)] = { grp, up, sx, at: at2, flags: grp.map(i => info[i].g.flags) };
+    }
+  }
   let lastSylX = null; // for melisma extenders
   notes.forEach((nt, i) => {
     const x = xs[i];
@@ -153,7 +223,8 @@ export function renderStaff(notes, o = {}) {
       s += `<text x="${x}" y="${midY + 4}" text-anchor="middle" class="st-hidden">?</text>`;
       return;
     }
-    const { step, acc, letter } = staffPosition(nt[0], tonic);
+    const { step, acc: spelled, letter } = staffPosition(nt[0], tonic);
+    const acc = accidentalFor(i, step, letter, spelled);
     const y = yOf(step);
     const bottom = yOf(base), topLine = yOf(base + 8);
     for (let ly = bottom + gap; ly <= y + 0.1; ly += gap) s += `<line x1="${x - 8}" x2="${x + 8}" y1="${ly}" y2="${ly}" class="st-line"/>`;
@@ -165,12 +236,13 @@ export function renderStaff(notes, o = {}) {
     if (rhythm) {
       const g = rhythmGlyph(nt[3] || 1);
       hollow = g.hollow;
-      const up = y >= midY; // stems up for low notes
+      const bm = beam[i];
+      const up = bm ? bm.up : y >= midY; // stems up for low notes
       if (g.stem) {
         const sx = up ? x + 4.8 : x - 4.8;
-        const sy2 = up ? y - 26 : y + 26;
+        const sy2 = bm ? bm.end : up ? y - 26 : y + 26;
         s += `<line x1="${sx}" x2="${sx}" y1="${y}" y2="${sy2}" class="st-stem ${cls}"/>`;
-        for (let f = 0; f < g.flags; f++) {
+        if (!bm) for (let f = 0; f < g.flags; f++) {
           const fy = up ? sy2 + f * 6 : sy2 - f * 6;
           s += `<path d="M${sx} ${fy} q 7 ${up ? 6 : -6} 5 ${up ? 14 : -14}" class="st-flag ${cls}"/>`;
         }
@@ -194,6 +266,24 @@ export function renderStaff(notes, o = {}) {
       s += `<text x="${x}" y="${nameY}" text-anchor="middle" class="st-name">${esc(label)}</text>`;
     }
   });
+  // beams: a primary beam over the group; second beams join neighbouring
+  // sixteenths, or a short stub for a lone sixteenth
+  for (const b of beamGroups) {
+    const th = 3.6, d = b.up ? 1 : -1;
+    const poly = (x1, x2, off) => {
+      const y1 = b.at(x1) + d * off, y2 = b.at(x2) + d * off;
+      return `<polygon points="${x1},${y1} ${x2},${y2} ${x2},${y2 + d * th} ${x1},${y1 + d * th}" class="st-beam"/>`;
+    };
+    s += poly(b.sx[0], b.sx[b.sx.length - 1], 0);
+    for (let k = 0; k < b.grp.length; k++) {
+      if (b.flags[k] < 2) continue;
+      if (k + 1 < b.grp.length && b.flags[k + 1] >= 2) s += poly(b.sx[k], b.sx[k + 1], 6);
+      else if (!(k > 0 && b.flags[k - 1] >= 2)) {
+        const stub = k + 1 < b.grp.length ? 8 : -8;
+        s += poly(Math.min(b.sx[k], b.sx[k] + stub), Math.max(b.sx[k], b.sx[k] + stub), 6);
+      }
+    }
+  }
   s += '</svg>';
   return s;
 }

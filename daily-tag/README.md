@@ -19,6 +19,7 @@ No build step and no dependencies. It's plain HTML, CSS and ES modules, and runs
 
 ## Notation, lyrics and rhythm
 
+* **Key signatures and engraving.** Staves show the key signature; accidentals appear only where a note leaves the key (lasting to the end of the bar once a part has barlines, with naturals to cancel). Eighths and sixteenths in the same beat are beamed.
 * **Syllables under notes.** Each note shows the syllable sung on it. A syllable held over several notes (a melisma) gets an extender line, and multi-syllable words are hyphenated ("roam-ing"), as on sheet music.
 * **Rhythm while learning, pitch when testing.** While you meet and tap along with a phrase, notes show their values (stems, flags, dots) and are spaced by length. Assessment shows pitch-only noteheads, and scoring ignores rhythm. Settings → *Show rhythm* can make it always or never.
   * Rhythm comes from the sheet music wherever the recording matches it. Otherwise it's quantised from the recording at an estimated tempo.
@@ -32,6 +33,7 @@ The notes and words are machine-transcribed, so some are wrong. **🔍 Check tag
 * **Pitches from a keyboard:** tap a note, then tap the right key; the selection moves on to the next note, so a wrong phrase can be re-entered in a few taps. 8va ▲▼ fixes octave slips.
 * **Follow the singer:** while the real recording plays, each note lights up on the staff, the note list and the keyboard as the singer reaches it (from our timings, so a lag also shows where the timing is off). The same happens in lessons with *Real singer*.
 * **Quick fixes:** tap a note, then ▲▼ a semitone, ✂ split it into repeated notes (“honk honk”), ⊕ merge, or 🗑 delete it. Turn it into a rest (or a rest back into a note — tapping a key does that too). Set its length (sixteenth to whole, dotted values too), put a barline before it, tie it to the next note of the same pitch, or place barlines every 2/3/4/6 beats from a chosen downbeat. Tied notes play and are tapped as one held note. Type the words for a phrase (“honk honk beep beep”, “lo-ving”, “_” to hold a syllable) and they're laid over the notes in order.
+* **Keyboard shortcuts (MuseScore-style):** <kbd>A</kbd>–<kbd>G</kbd> pitch (in the key, nearest the previous note, then on to the next note) · <kbd>3</kbd>–<kbd>7</kbd> sixteenth to whole · <kbd>.</kbd> dot · <kbd>↑</kbd>/<kbd>↓</kbd> semitone, with <kbd>Ctrl</kbd>/<kbd>⌘</kbd> an octave · <kbd>←</kbd>/<kbd>→</kbd> select · <kbd>T</kbd> tie · <kbd>R</kbd> or <kbd>0</kbd> rest · <kbd>|</kbd> barline · <kbd>Delete</kbd> · <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> undo · <kbd>Space</kbd> play.
 * **Same as another part:** copy another part into this one, at the same pitch or an octave up or down (for unisons and octave doublings).
 * The screen always shows the whole part; coming from a lesson, it starts on that phrase's first note.
 * Rests added here show in lessons' notation too.

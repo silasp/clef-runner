@@ -90,6 +90,29 @@ await page.click('[data-op=oct-up]');
 assert.equal(await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes[2][0], id), kbKey + 12);
 await page.click('[data-op=undo]');
 
+// MuseScore-style hotkeys
+const notesNow = () => page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes, id);
+await page.click('.nchip >> nth=4');
+await page.keyboard.press('g');
+let ns = await notesNow();
+assert.equal(ns[4][0] % 12, 7, 'G key sets a G');
+assert.equal(await page.getAttribute('.nchip.sel', 'data-i'), '5', 'and moves on');
+await page.keyboard.press('ArrowLeft');
+await page.keyboard.press('4');
+await page.keyboard.press('.');
+ns = await notesNow();
+assert.equal(ns[4][3], 0.75, '4 then . gives a dotted eighth');
+await page.keyboard.press('ArrowUp');
+assert.equal((await notesNow())[4][0], ns[4][0] + 1, 'up a semitone');
+await page.keyboard.press('Control+ArrowDown');
+assert.equal((await notesNow())[4][0], ns[4][0] - 11, 'down an octave');
+await page.keyboard.press('Control+z');
+await page.keyboard.press('Control+z');
+assert.equal((await notesNow())[4][0], ns[4][0], 'undo');
+await page.keyboard.press('r');
+assert.match((await notesNow())[4][5] || '', /r/, 'R makes a rest');
+await page.keyboard.press('r');
+
 // rests: a note becomes a rest (drawn as one, silent, no words) and back
 await page.click('.nchip >> nth=3');
 await page.click('[data-op=rest]');

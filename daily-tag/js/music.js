@@ -32,6 +32,31 @@ export function noteName(m, tonic = 0, withOctave = true) {
   return withOctave ? n + octaveOf(m) : n;
 }
 
+const SHARP_ORDER = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
+const FLAT_ORDER = ['B', 'E', 'A', 'D', 'G', 'C', 'F'];
+const SIG_COUNT = { 0: 0, 7: 1, 2: 2, 9: 3, 4: 4, 11: 5, 6: -6, 1: -5, 8: -4, 3: -3, 10: -2, 5: -1 };
+
+/** Key signature of a major tonic: { acc: '♯' | '♭', letters: ['F', 'C', …] }. */
+export function keySignature(tonic) {
+  const n = SIG_COUNT[((tonic % 12) + 12) % 12];
+  return n >= 0 ? { acc: '♯', letters: SHARP_ORDER.slice(0, n) } : { acc: '♭', letters: FLAT_ORDER.slice(0, -n) };
+}
+
+const LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+/** The note a letter means in this key (F means F♯ in D major), in the octave nearest `near`. */
+export function letterToMidi(letter, tonic, near = 60) {
+  const L = String(letter).toUpperCase();
+  const sig = keySignature(tonic);
+  let pc = LETTER_PC[L];
+  if (pc == null) return null;
+  if (sig.letters.includes(L)) pc += sig.acc === '♯' ? 1 : -1;
+  let m = pc + 12 * Math.round((near - pc) / 12);
+  if (m - near > 6) m -= 12;
+  if (near - m > 6) m += 12;
+  return m;
+}
+
 export function keyName(tonic, mode = 'major') {
   const names = FLAT_TONICS.has(tonic) || mode === 'minor' && FLAT_TONICS.has((tonic + 3) % 12) ? FLAT_NAMES : SHARP_NAMES;
   return names[tonic] + (mode === 'minor' ? ' minor' : ' major');

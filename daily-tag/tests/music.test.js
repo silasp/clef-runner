@@ -56,3 +56,15 @@ test('parseWrittenKey', () => {
   assert.deepEqual(parseWrittenKey('Minor:F#'), { tonic: 6, mode: 'minor' });
   assert.equal(parseWrittenKey(''), null);
 });
+
+test('key signatures and letter entry', async () => {
+  const { keySignature, letterToMidi } = await import('../js/music.js');
+  assert.deepEqual(keySignature(2), { acc: '♯', letters: ['F', 'C'] });
+  assert.deepEqual(keySignature(3), { acc: '♭', letters: ['B', 'E', 'A'] });
+  assert.deepEqual(keySignature(0).letters, []);
+  assert.equal(letterToMidi('f', 2, 60), 66, 'F means F♯ in D major');
+  assert.equal(letterToMidi('B', 3, 60), 58, 'B means B♭ in E♭, nearest below');
+  assert.equal(letterToMidi('C', 0, 67), 72, 'nearest C to G4 is C5');
+  assert.equal(letterToMidi('D', 0, 60), 62);
+  assert.equal(letterToMidi('x', 0, 60), null);
+});

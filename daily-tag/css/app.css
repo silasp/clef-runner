@@ -342,3 +342,7 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 .copy-part { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 4px; padding-top: 8px; border-top: 1px solid var(--line); }
 .copy-part select { font: inherit; font-size: 16px; padding: 6px; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
 .copy-part .btns { margin: 0; }
+.st-beam { fill: var(--ink); }
+.kbd-help { display: none; line-height: 1.8; }
+@media (hover: hover) and (pointer: fine) { .kbd-help { display: block; } }
+kbd { font: inherit; font-size: .75rem; padding: 0 4px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--bg); }
