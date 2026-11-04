@@ -182,3 +182,24 @@ test('merging keeps other parts: a newer fix to one part never drops the rest', 
   const older = mergeStores(remote, { 5: { ts: 5, parts: { Lead: { ok: false, notes: [[61, 0, 1, 1, 'x']] } } } });
   assert.equal(older['5'].parts.Lead.notes[0][0], 60, 'older local fix loses to the repo');
 });
+
+test('trust: high-confidence tags, or all four parts confirmed by an approved fix', async () => {
+  const { isTrusted, pendingStore, applyCorrections } = await import('../js/corrections.js');
+  const n = [[60, 0, 1, 1, 'a'], [62, 1, 1, 1, 'b']];
+  const low = { id: 7, confidence: 'low', parts: { Tenor: n, Lead: n, Bari: n, Bass: n } };
+  const high = { ...low, id: 8, confidence: 'high' };
+  const all = { 7: { ts: 1, parts: { Tenor: { ok: true }, Lead: { ok: true }, Bari: { ok: true }, Bass: { ok: true } } } };
+  const three = { 7: { ts: 1, parts: { Tenor: { ok: true }, Lead: { ok: true }, Bari: { ok: true } } } };
+  assert.equal(isTrusted(high, {}), true);
+  assert.equal(isTrusted(low, {}), false);
+  assert.equal(isTrusted(low, three), false, 'every part must be confirmed');
+  assert.equal(isTrusted(low, all), true);
+  // a fix on this device (store) doesn't make it trusted; only the approved store does
+  const out = applyCorrections([low], all, {});
+  assert.equal(out[0].trusted, false);
+  assert.equal(applyCorrections([low], {}, all)[0].trusted, true);
+  // pending submissions merge, newest first
+  const ps = pendingStore({ 3: { ts: 5, fixes: { 7: { ts: 1, parts: { Lead: { ok: true, notes: n } } } } },
+                            4: { ts: 9, fixes: { 7: { ts: 2, parts: { Bass: { ok: true } } } } } });
+  assert.deepEqual(Object.keys(ps['7'].parts).sort(), ['Bass', 'Lead']);
+});

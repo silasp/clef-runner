@@ -349,3 +349,6 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 .kbd-help { display: none; line-height: 1.8; }
 @media (hover: hover) and (pointer: fine) { .kbd-help { display: block; } }
 kbd { font: inherit; font-size: .75rem; padding: 0 4px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--bg); }
+.fixmode { margin: 18px 0 6px; text-align: center; }
+.fix-btn { width: 100%; padding: 12px; border-radius: 12px; border: 1px dashed var(--accent-2); background: var(--card); color: var(--ink); font-weight: 700; font-size: 1rem; }
+.unverified { margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: var(--ok-bg); font-size: .9rem; line-height: 1.4; }

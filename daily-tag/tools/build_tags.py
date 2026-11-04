@@ -498,6 +498,9 @@ def tag_record(t, source, with_lyrics, parts, cache, a):
         'downloads': int(t.get('Downloaded') or 0),
         'rank': t['rank'],
         'source': source,
+        # high: the arranger's score, or a sheet reading the recording confirms (≈0.95 F1);
+        # low: one unconfirmed source (sheet ≈0.83, audio) — hidden from learners until fixed
+        'confidence': 'high' if source in ('score', 'verified') else 'low',
         'lyricsTimed': with_lyrics == 4,
         'page': f"{SITE}tag-{t['id']}-{slug(t['Title'])}",
         'sheet': t.get('SheetMusicAlt') or '',

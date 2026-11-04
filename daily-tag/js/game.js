@@ -17,6 +17,8 @@ export function initialState() {
       showNames: true,
       rhythm: 'learning',      // show note values while learning; pitch-only when assessing
       synthVolume: 0.7,
+      showUnverified: false,   // learn tags not yet checked (hidden by default)
+      reviewer: false,         // preview fixes awaiting review
     },
     cards: {},
     xpTotal: 0,

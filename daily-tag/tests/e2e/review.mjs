@@ -184,6 +184,18 @@ const hidden = await page.evaluate(k => JSON.parse(localStorage.getItem('daily-t
 assert.equal(hidden[id].hide, true);
 assert.equal(await page.locator(`.rq li[data-go="${id}"]`).count(), 0, 'hidden tag gone from the list');
 
+// fix mode: the home screen hands out a hidden (unverified) tag
+await page.goto(BASE);
+await page.waitForSelector('[data-act=fixmode]');
+await page.click('[data-act=fixmode]');
+await page.waitForSelector('.review .unverified');
+const fixId = await page.evaluate(() => location.hash.split('/')[1]);
+const trusted = await page.evaluate(async id => {
+  const d = await (await fetch('data/tags.json')).json();
+  return d.tags.find(t => String(t.id) === id).confidence;
+}, fixId);
+assert.equal(trusted, 'low', 'fix mode picks a low-confidence tag');
+
 assert.deepEqual(errors, []);
 await browser.close();
 console.log(`e2e review OK — tag ${id}, ${before}→${before + 1} notes, issue URL ${url.length} chars`);

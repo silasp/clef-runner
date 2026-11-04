@@ -38,6 +38,9 @@ The notes and words are machine-transcribed, so some are wrong. **🔍 Check tag
 * **Same as another part:** copy another part into this one, at the same pitch or an octave up or down (for unisons and octave doublings).
 * The screen always shows the whole part; coming from a lesson, it starts on that phrase's first note.
 * Rests added here show in lessons' notation too.
+* **Only trusted tags are taught.** Each tag has a confidence: *high* for the arranger's score or a sheet reading the recording confirms (≈0.95 F1), *low* otherwise (sheet reading alone ≈0.83, audio only). Learners see high-confidence tags (and any they've already started); Settings → *Also learn unverified tags* shows the rest.
+* **🔧 I wanna fix some broken tags** (home screen) hands out a random low-confidence tag that nobody has a fix for yet; after its parts are ✓-checked it moves on to the next one.
+* **Fixes are reviewed before they count.** The repo owner's own submissions apply at once. Anyone else's are held in `data/pending.json`; the owner adds the label `approved` to the issue to merge them into `data/corrections.json` (closing the issue), or closes the issue to drop them. A low-confidence tag becomes trusted once an approved fix confirms all four parts. Settings → *Reviewer* previews held fixes in the app.
 * **✓ Correct** marks a part as checked; 🚩 hides a tag that's beyond repair.
 * Fixes apply on your phone at once. **Submit** opens a prefilled GitHub issue on this repo. When the repo owner or a collaborator files it, the `apply-corrections` workflow merges it into `data/corrections.json`, commits, and closes the issue. The app applies `corrections.json` on top of the generated `tags.json`, so fixes survive data rebuilds.
 * PDF sheets are pre-rendered to `sheets/<id>.png` (`tools/sheet_images.sh`), because iOS can't show a PDF inside a page.

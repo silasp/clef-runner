@@ -155,7 +155,7 @@ export function showReviewQueue() {
       const st = status(t);
       return `<li data-go="${t.id}" class="${st}"><span class="rq-t">${esc(t.title)}</span>
         <span class="rq-s">${PARTS.map(p => `<i title="${p}">${partBadge(t.id, p) || '·'}</i>`).join('')}</span>
-        <span class="muted small">${t.source === 'verified' ? '✓ sheet' : t.source}${pend.includes(t.id) ? ' · unsent' : ''}</span></li>`;
+        <span class="muted small">${t.trusted ? (t.source === 'verified' ? '✓ sheet' : t.source) : '🔧 unverified'}${pend.includes(t.id) ? ' · unsent' : ''}</span></li>`;
     }).join('')}</ul>
   </main>`;
   app.querySelectorAll('[data-go]').forEach(el => el.onclick = () => { location.hash = `review/${el.dataset.go}`; });
@@ -190,7 +190,7 @@ export function submit() {
   }
   for (const id of ids) store[id].submitted = true;
   env.save();
-  env.toast('Submitted on GitHub — the library updates a minute after you press “Submit new issue”');
+  env.toast('Opened on GitHub — press “Submit new issue”. Your fix goes live once it’s reviewed.');
   if (location.hash === '#review') showReviewQueue();
 }
 
@@ -242,6 +242,7 @@ function render() {
       ${submitButton(pend)}
     </div>
     <h1>${esc(tag.title)}</h1>
+    ${tag.trusted ? '' : `<div class="unverified">🔧 <b>Unverified tag</b> — hidden from learners until it's checked. Compare every part with the sheet music and the real singer, fix what's wrong, press ✓ for each part, then Submit. Fixes go live once they're reviewed.</div>`}
     <div class="muted small">#${tag.rank} · our notes ${sourceLabel}${tag.corrected ? ' · corrected' : ''}</div>
     <div class="tabs" role="tablist">${PARTS.map(p => `<button role="tab" class="tab ${p === view.part ? 'on' : ''}" data-part="${p}">${p} <b>${partBadge(view.id, p)}</b></button>`).join('')}</div>
 
@@ -503,7 +504,8 @@ function bind() {
     view.saved = JSON.stringify(view.notes);
     const nextPart = PARTS[PARTS.indexOf(view.part) + 1];
     if (back !== 'lesson' && nextPart) { go(0, nextPart); return; }
-    env.toast(back === 'lesson' ? `Saved — thanks!` : `${tag.title} checked ✓`);
+    env.toast(back === 'lesson' ? `Saved — thanks!` : `${tag.title} checked ✓ — remember to Submit`);
+    if (sessionStorage.getItem('daily-tag:fixmode') && !tag.trusted && back !== 'lesson') { env.fixAnother(); return; }
     location.hash = backHash();
   };
   $('[data-act=hide]', app).onclick = () => {

@@ -303,9 +303,29 @@ export function pruneLocal(local, remote) {
 }
 
 /** Apply corrections to raw tags (before prepareTags). Hidden tags are removed. */
-export function applyCorrections(rawTags, store) {
+/** Is this tag trustworthy enough to show learners? High confidence from the build,
+ *  or all four parts confirmed by a fix the maintainer approved (in `approved`,
+ *  i.e. data/corrections.json — never a fix that only exists on someone's phone). */
+export function isTrusted(t, approved) {
+  if (t.confidence !== 'low') return true;
+  const e = approved && approved[String(t.id)];
+  return !!(e && !e.hide && ['Tenor', 'Lead', 'Bari', 'Bass'].every(p => e.parts && e.parts[p] && e.parts[p].ok));
+}
+
+/** All held (unreviewed) submissions in data/pending.json as one store, newest winning. */
+export function pendingStore(pending) {
+  let out = {};
+  for (const sub of Object.values(pending || {}).sort((a, b) => (a.ts || 0) - (b.ts || 0))) {
+    const stamped = Object.fromEntries(Object.entries(sub.fixes || {}).map(([id, e]) => [id, { ...e, ts: Math.max(e.ts || 0, sub.ts || 0) }]));
+    out = mergeStores(out, stamped);
+  }
+  return out;
+}
+
+export function applyCorrections(rawTags, store, approved = store) {
   const out = [];
-  for (const t of rawTags) {
+  for (const t0 of rawTags) {
+    const t = { ...t0, trusted: isTrusted(t0, approved) };
     const e = store && store[String(t.id)];
     // scores bring rests: lessons learn the sung notes, notation shows the written part
     const hasRests = Object.values(t.parts).some(ns => ns.some(isRest));

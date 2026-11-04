@@ -1,10 +1,12 @@
 name: apply-corrections
-# Issues opened from the app's review screen carry a JSON block of tag
-# corrections. For the repo owner and collaborators, merge them into
-# data/corrections.json, commit, and close the issue.
+# Tag fixes arrive as issues from the app's review screen (a JSON block).
+# - The repo owner's own fixes count at once (the owner is the reviewer).
+# - Anyone else's are held in data/pending.json until the owner reviews them:
+#   add the label "approved" to accept (merged into data/corrections.json and
+#   the issue is closed), or close the issue without it to reject.
 on:
   issues:
-    types: [opened, edited]
+    types: [opened, edited, labeled, closed]
 permissions:
   contents: write
   issues: write
@@ -13,44 +15,77 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
-    if: >-
-      contains(github.event.issue.body, 'daily-tag-corrections') &&
-      github.event.issue.state == 'open' &&
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    if: contains(github.event.issue.body, 'daily-tag-corrections')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Merge into data/corrections.json
-        id: apply
+      - name: Decide
+        id: decide
+        env:
+          EVENT: ${{ github.event.action }}
+          AUTHOR: ${{ github.event.issue.user.login }}
+          SENDER: ${{ github.event.sender.login }}
+          OWNER: ${{ github.repository_owner }}
+          LABEL: ${{ github.event.label.name }}
+          STATE: ${{ github.event.issue.state }}
+          LABELS: ${{ join(github.event.issue.labels.*.name, ',') }}
+        run: |
+          action=none
+          case "$EVENT" in
+            opened|edited)
+              if [ "$STATE" = open ]; then
+                if [ "$AUTHOR" = "$OWNER" ]; then action=approve; else action=pending; fi
+              fi ;;
+            labeled)
+              if [ "$LABEL" = approved ] && [ "$SENDER" = "$OWNER" ]; then action=approve; fi ;;
+            closed)
+              case ",$LABELS," in *,approved,*) ;; *) if [ "$AUTHOR" != "$OWNER" ]; then action=reject; fi ;; esac ;;
+          esac
+          echo "action=$action" >> "$GITHUB_OUTPUT"
+          echo "decided: $action"
+      - name: Apply
+        if: steps.decide.outputs.action != 'none'
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
-        run: |
-          node tools/apply_corrections.mjs > summary.txt
-          cat summary.txt
+          NUMBER: ${{ github.event.issue.number }}
+          ACTION: ${{ steps.decide.outputs.action }}
+        run: node tools/apply_corrections.mjs "$ACTION" "$NUMBER" > summary.txt && cat summary.txt
       - name: Commit
+        if: steps.decide.outputs.action != 'none'
         env:
           NUMBER: ${{ github.event.issue.number }}
+          ACTION: ${{ steps.decide.outputs.action }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/corrections.json
+          git add data/corrections.json data/pending.json
           if git diff --cached --quiet; then echo "No change"; exit 0; fi
-          git commit -m "Tag corrections from #$NUMBER" -m "$(cat summary.txt)"
+          git commit -m "Tag fixes from #$NUMBER: $ACTION" -m "$(cat summary.txt)"
           for i in 1 2 3; do git pull --rebase && git push && exit 0; sleep 5; done
           exit 1
-      - name: Close the issue
+      - name: Tell the submitter
+        if: steps.decide.outputs.action != 'none'
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ github.event.issue.number }}
+          ACTION: ${{ steps.decide.outputs.action }}
+          STATE: ${{ github.event.issue.state }}
         run: |
-          gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "Applied ✅ $(cat summary.txt) — live once GitHub Pages redeploys (about a minute)."
-          gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY"
+          case "$ACTION" in
+            approve)
+              gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "Approved and applied ✅ $(cat summary.txt) — live once GitHub Pages redeploys (about a minute)."
+              if [ "$STATE" = open ]; then gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY"; fi ;;
+            pending)
+              gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "Thanks! Your fix is saved and waiting for review: $(cat summary.txt). It goes live once the maintainer approves it." ;;
+            reject)
+              gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "Closed without approval — the held fix was dropped." ;;
+          esac
       - name: Report a failure
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ github.event.issue.number }}
-        run: gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "Couldn't apply these corrections — see the workflow run log ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+        run: gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "Couldn't process these fixes — see the workflow run log ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."

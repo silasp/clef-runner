@@ -11,7 +11,7 @@ import { mountKeyboard, rangeFor } from './keyboard.js';
 import { framesToNotes, alignPitches, lyricMatch, combineScores } from './scoring.js';
 import * as audio from './audio.js';
 import { listen, hasMic, hasSpeech } from './mic.js';
-import { applyCorrections, mergeStores, pruneLocal, loadLocal, saveLocal, pending, withRests } from './corrections.js';
+import { applyCorrections, mergeStores, pruneLocal, loadLocal, saveLocal, pending, withRests, pendingStore } from './corrections.js';
 import { initReview, showReview, showReviewQueue, setReviewBack } from './review.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -21,7 +21,9 @@ let TAGS = [];
 let BY_ID = {};
 let RAW_BY_ID = {};         // tags as generated, before corrections
 let RAW = [];
-let REMOTE_FIXES = {};      // data/corrections.json
+let REMOTE_FIXES = {};      // data/corrections.json (approved by the maintainer)
+let PENDING = {};           // data/pending.json (fixes awaiting review; shown to reviewers only)
+let LEARN = [];             // tags shown to learners: trusted ones (plus any already started)
 let LOCAL_FIXES = loadLocal();  // this device's edits, until they reach the repo
 let WORD_POOL = [];
 let lesson = null;
@@ -37,7 +39,8 @@ async function boot() {
     const [res, fixes] = await Promise.all([
       fetch('data/tags.json'),
       fetch('data/corrections.json').then(r => (r.ok ? r.json() : {})).catch(() => ({})),
-    ]);
+      fetch('data/pending.json').then(r => (r.ok ? r.json() : {})).catch(() => ({})),
+    ]).then(([a, b, c]) => { PENDING = c || {}; return [a, b]; });
     const raw = await res.json();
     RAW = raw.tags;
     RAW_BY_ID = Object.fromEntries(RAW.map(t => [String(t.id), t]));
@@ -60,8 +63,11 @@ async function boot() {
 
 /** Apply corrections (repo + this device) and prepare the library. */
 function rebuildTags() {
-  TAGS = prepareTags(applyCorrections(RAW, mergeStores(REMOTE_FIXES, LOCAL_FIXES)));
+  const held = state.settings.reviewer ? pendingStore(PENDING) : {};
+  TAGS = prepareTags(applyCorrections(RAW, mergeStores(mergeStores(REMOTE_FIXES, held), LOCAL_FIXES), REMOTE_FIXES));
   BY_ID = Object.fromEntries(TAGS.map(t => [t.id, t]));
+  const started = new Set(Object.keys(state.cards).map(k => k.split('/')[0]));
+  LEARN = TAGS.filter(t => t.trusted || state.settings.showUnverified || started.has(t.id));
   WORD_POOL = [...new Set(TAGS.flatMap(t => (t.lyrics || '').split(/\s+/)))];
 }
 
@@ -71,6 +77,7 @@ initReview({
   raw: id => RAW_BY_ID[String(id)],
   tag: id => BY_ID[String(id)],
   tags: () => TAGS,
+  fixAnother: () => fixRandomTag(),
   startedTags: () => [...new Set(Object.keys(state.cards).map(k => k.split('/')[0]))],
   store: () => LOCAL_FIXES,
   remote: () => REMOTE_FIXES,
@@ -150,22 +157,22 @@ function bindModeToggles(root) {
 // ---------------------------------------------------------------- home
 function showHome() {
   const t = today();
-  const next = nextNewItem(TAGS, state.cards, state.settings.myPart, state.settings.mode, state.settings.partOrder);
+  const next = nextNewItem(LEARN, state.cards, state.settings.myPart, state.settings.mode, state.settings.partOrder);
   const due = dueCards(state.cards, t).length;
   const learnedToday = state.learnedLog.filter(m => m.day === t);
   const lvl = levelOf(state.xpTotal);
-  const q = learningQueue(TAGS, state.settings.myPart, state.settings.mode, state.settings.partOrder);
+  const q = learningQueue(LEARN, state.settings.myPart, state.settings.mode, state.settings.partOrder);
   const seen = new Set();
   const pathTags = [];
   for (const x of q) if (!seen.has(x.tag.id)) { seen.add(x.tag.id); pathTags.push(x.tag); }
   const nextLabel = next ? `${esc(next.tag.title)} · ${next.part} · ${next.phrase === 'all' ? 'whole part' : `phrase ${next.phrase + 1}/${next.tag.phrases[next.part].length}`}` : 'Everything learned — reviews only!';
-  const totalLearnedParts = TAGS.reduce((a, tg) => a + PARTS.filter(p => partStatus(tg, p, state.cards).done).length, 0);
-  const wholeTags = TAGS.filter(tg => tagStatus(tg, state.cards).learnedParts === 4).length;
+  const totalLearnedParts = LEARN.reduce((a, tg) => a + PARTS.filter(p => partStatus(tg, p, state.cards).done).length, 0);
+  const wholeTags = LEARN.filter(tg => tagStatus(tg, state.cards).learnedParts === 4).length;
 
   app.innerHTML = `${topBar()}
   <main class="screen home">
     <section class="hero">
-      <div class="hero-row"><span class="lvl">Lv ${lvl}</span><span class="muted">${state.xpTotal} XP · ${wholeTags}/${TAGS.length} tags · ${totalLearnedParts} parts memorised</span></div>
+      <div class="hero-row"><span class="lvl">Lv ${lvl}</span><span class="muted">${state.xpTotal} XP · ${wholeTags}/${LEARN.length} tags · ${totalLearnedParts} parts memorised</span></div>
       <div class="today-card">
         <div class="muted small">Today's tag</div>
         <div class="today-title">${nextLabel}</div>
@@ -186,6 +193,10 @@ function showHome() {
         </li>`).join('')}
       </ol>
     </section>
+    <section class="fixmode">
+      <button class="fix-btn" data-act="fixmode">🔧 I wanna fix some broken tags</button>
+      <div class="muted small">${TAGS.filter(t => !t.trusted).length} tags are hidden until someone checks them against the sheet music and recording. Fixes go live once they're reviewed.</div>
+    </section>
     <footer class="foot muted small">
       <a href="#badges">🏅 Badges (${state.badges.length}/${BADGES.length})</a> ·
       <a href="#review">🔍 Check tags${pending(LOCAL_FIXES, REMOTE_FIXES).length ? ` (${pending(LOCAL_FIXES, REMOTE_FIXES).length} unsent)` : ''}</a> ·
@@ -193,12 +204,25 @@ function showHome() {
     </footer>
   </main>`;
   $('[data-act=start]').onclick = () => { audio.unlock(); startLesson(); };
+  $('[data-act=fixmode]').onclick = () => fixRandomTag();
   bindModeToggles(app);
   app.querySelectorAll('.path li').forEach(li => li.onclick = () => { location.hash = 'tag/' + li.dataset.tag; });
   $('.filter').oninput = e => {
     const v = e.target.value.toLowerCase();
     app.querySelectorAll('.path li').forEach(li => { li.style.display = li.dataset.title.includes(v) ? '' : 'none'; });
   };
+}
+
+/** Fix mode: a random hidden (low-confidence) tag nobody has a fix for yet. */
+function fixRandomTag() {
+  const held = new Set(Object.values(PENDING).flatMap(sub => Object.keys(sub.fixes || {})));
+  const pool = TAGS.filter(t => !t.trusted && !LOCAL_FIXES[t.id] && !held.has(t.id) && !REMOTE_FIXES[t.id]);
+  if (!pool.length) { toast('No broken tags left to fix — thank you!'); return; }
+  const withSheet = pool.filter(t => t.sheet);
+  const pick = (withSheet.length ? withSheet : pool)[Math.floor(Math.random() * (withSheet.length || pool.length))];
+  setReviewBack(null);
+  sessionStorage.setItem('daily-tag:fixmode', '1');
+  location.hash = `review/${pick.id}/Lead/0`;
 }
 
 // ---------------------------------------------------------------- tag page
@@ -282,6 +306,8 @@ function showSettings() {
         <option value="never" ${s.rhythm === 'never' ? 'selected' : ''}>Never</option>
       </select>
     </label>
+    <label class="check"><input type="checkbox" name="showUnverified" ${s.showUnverified ? 'checked' : ''}> Also learn unverified tags (they may contain mistakes)</label>
+    <label class="check"><input type="checkbox" name="reviewer" ${s.reviewer ? 'checked' : ''}> Reviewer: preview fixes that are waiting for review</label>
     <label class="check"><input type="checkbox" name="speech" ${s.speech ? 'checked' : ''} ${hasSpeech() ? '' : 'disabled'}> Check lyrics with speech recognition ${hasSpeech() ? '' : '(not supported here)'}</label>
     <label class="check"><input type="checkbox" name="octaveFree" ${s.octaveFree ? 'checked' : ''}> Accept singing in any octave</label>
     <label class="check"><input type="checkbox" name="showNames" ${s.showNames ? 'checked' : ''}> Show note names while learning</label>
@@ -292,6 +318,7 @@ function showSettings() {
   app.querySelectorAll('select, input[type=checkbox]').forEach(el => el.onchange = () => {
     const v = el.type === 'checkbox' ? el.checked : el.name === 'dailyGoal' ? Number(el.value) : el.value;
     state.settings[el.name] = v; persist();
+    if (el.name === 'showUnverified' || el.name === 'reviewer') rebuildTags();
   });
   $('[data-act=export]').onclick = async () => {
     const txt = exportJson(state);
@@ -324,7 +351,7 @@ function toast(msg) {
 function startLesson(focus) {
   const c = caps();
   const built = buildLesson({
-    tags: TAGS, cards: state.cards, today: today(), myPart: state.settings.myPart, mode: state.settings.mode,
+    tags: LEARN, cards: state.cards, today: today(), myPart: state.settings.myPart, mode: state.settings.mode,
     order: state.settings.partOrder, canListen: c.canListen, canSing: c.canSing, seed: Date.now() & 0xffff, focus,
   });
   if (!built.exercises.length) { toast('Nothing to practise right now 🎉'); return; }
