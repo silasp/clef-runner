@@ -576,10 +576,21 @@ def main():
             continue
         if source in ('score', 'sheet', 'verified'):   # notation (arranger's score or sheet reading): rhythm, ties, bars, rests as written
             lyr = t.get('Lyrics') or ''
-            if not any(n[4] for p in PARTS for n in parts[p]):
+            placed = [p for p in PARTS if any(n[4] for n in parts[p])]      # an arranger's file brings its own
+            pdf = f'{a.work}/sheets/{t["id"]}.pdf'
+            if not placed and os.path.exists(pdf):
+                import pdf_lyrics
+                try:
+                    st = pdf_lyrics.staff_lyrics(pdf)
+                    placed = pdf_lyrics.apply(parts, st) if st else []
+                    if not placed:                      # words without note positions: still the right words
+                        lyr = pdf_lyrics.lyric_text(pdf, lyr) or lyr
+                except Exception:  # noqa: BLE001
+                    placed = []
+            if len(placed) < 4:
                 wf = f'{a.work}/words/{t["id"]}.json'
                 heard = json.load(open(wf)) if os.path.exists(wf) else {}
-                for p in PARTS:
+                for p in [q for q in PARTS if q not in placed]:
                     sung = [n for n in parts[p] if 'r' not in (n[5] if len(n) > 5 else '')]
                     times = word_times(lyr, heard.get(p, [])) or word_times(lyr, heard.get('Lead', []))
                     for n, sy in zip(sung, attach_syllables([n[:3] for n in sung], lyr, times)):

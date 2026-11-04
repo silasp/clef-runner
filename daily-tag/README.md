@@ -158,7 +158,11 @@ Every other tag gets **two independent transcriptions**, and they check each oth
 * Barbershop tags are engraved on two staves: Tenor/Lead on a treble-8 clef and Bari/Bass on a bass clef. homr returns chords, so the voices are split by register: on each staff the top note is Tenor or Bari, the bottom note is Lead or Bass, and a single note means unison.
 * On a benchmark of 15 tags, OMR matched the clean audio transcriptions 83–91 % per part on average, and 100 % on many parts.
 
-**3. Lyric timing** (`tools/align_lyrics.py`)
+**3a. Lyrics from the sheet PDF** (`tools/pdf_lyrics.py`)
+
+PDFs exported from notation software keep the lyrics *and* the music-font glyphs (clefs, noteheads, rests) as positioned text. Each clef starts a staff; noteheads and rests give the staff's columns left to right; a row of words just under a staff is its lyric line, with "-" joining syllables. Each syllable goes on the note column above it, and so onto the notes of that staff's voices that start there — so a Bass melody with its own words gets them. A staff without its own lyric line sings the other staff's words. Measured against arrangers' files that carry lyrics: 0.95 of syllables on the right note. Where a PDF draws its notes as shapes, its text still gives the right words in sung order for the timing method below. (192 of the library's PDFs carry music text, 74 only lyric text, 54 are scans.)
+
+**3b. Lyric timing** (`tools/align_lyrics.py`)
 
 * [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes each recovered voice with word timestamps, primed with the tag's lyrics.
 * Recognised words are aligned to the real lyric text, so mishearings don't matter much, and hyphenated with pyphen.
