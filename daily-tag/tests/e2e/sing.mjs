@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { prepareTags } from '../../js/curriculum.js';
+import { applyCorrections } from '../../js/corrections.js';
 import { midiToFreq } from '../../js/music.js';
 
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -14,7 +15,9 @@ const BASE = process.env.BASE_URL || 'http://localhost:8080/';
 const idx = Number(process.argv[2] || 0);
 const part = process.argv[3] || 'Lead';
 const raw = JSON.parse(readFileSync(new URL('../../data/tags.json', import.meta.url)));
-const tag = prepareTags(raw.tags)[idx];
+// the app applies the repo's corrections (and strips rests) before learning: do the same
+const fixes = JSON.parse(readFileSync(new URL('../../data/corrections.json', import.meta.url)));
+const tag = prepareTags(applyCorrections(raw.tags, fixes))[idx];
 const phrase = tag.phrases[part][0];
 const wrong = process.env.WRONG === '1';
 

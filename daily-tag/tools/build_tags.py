@@ -551,7 +551,7 @@ def main():
     ap.add_argument('--max-resid', type=float, default=0.12)
     ap.add_argument('--no-scores', action='store_true', help="ignore arrangers' score files (to measure the other sources)")
     ap.add_argument('--only', default='', help='comma-separated tag ids to build (for evaluation)')
-    ap.add_argument('--min-sheet-agree', type=float, default=0.2,
+    ap.add_argument('--min-sheet-agree', type=float, default=0.0,
                     help='use the sheet reading unless it agrees with the recording less than this (see ml/sheet_gate.py)')
     ap.add_argument('--with-sheet-only', dest='sheet_only', action='store_true',
                     help='also include tags that have only sheet music (no learning tracks)')

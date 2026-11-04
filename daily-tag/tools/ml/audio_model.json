@@ -13,4 +13,13 @@
   "cm_vote": 0.35,
   "cm_use": 0
  },
- "filter": 
+ "filter": false,
+ "thr": null,
+ "cv": {
+  "default": 0.747,
+  "tuned": 0.875,
+  "filter": 0.873
+ },
+ "n_tags": 80,
+ "note": "best of 401 random-search trials; grouped 5-fold CV held-out F1 shown in cv"
+}
