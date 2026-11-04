@@ -107,18 +107,24 @@ def plausible(parts, slack=2):
     return med['Bass'] <= min(med['Bari'], med['Lead']) and med['Tenor'] >= med['Lead'] - 2
 
 
-def sheet_times(sheet, audio_lead, shift):
-    """Map sheet beats to seconds. With a recording: anchor matched Lead
-    notes (beat ↔ second) and interpolate; otherwise a steady 72 bpm."""
+def beat_clock(s_lead, audio_lead, shift, word_anchors=None):
+    """Beat → seconds. With a recording: anchor matched Lead notes
+    (beat ↔ second) and interpolate; failing that, anchor the words where
+    speech recognition heard them sung; otherwise a steady 72 bpm."""
     sec_per_beat = 60 / 72
     anchors = []
     if audio_lead:
-        s_lead = sheet['Lead']
         _, pairs = align([n[0] for n in audio_lead], [n[0] + shift for n in s_lead])
         for ia, js in pairs:
             b, s = s_lead[js][1], audio_lead[ia][1]
             if not anchors or (b > anchors[-1][0] and s > anchors[-1][1]):
                 anchors.append((b, s))
+    words = []
+    for b, s in word_anchors or []:
+        if not words or (b > words[-1][0] and s > words[-1][1]):
+            words.append((b, s))
+    if len(anchors) < max(3, len(words) // 2):
+        anchors = words
     if len(anchors) >= 3:
         bs, ss = zip(*anchors)
         rate = (ss[-1] - ss[0]) / max(1e-6, bs[-1] - bs[0])
@@ -130,9 +136,83 @@ def sheet_times(sheet, audio_lead, shift):
             return float(np.interp(beat, bs, ss))
     else:
         f = lambda beat: 0.5 + beat * sec_per_beat
+    return f
+
+
+def sheet_times(sheet, audio_lead, shift):
+    """Time sheet notes by the recording's Lead (or a steady tempo)."""
+    f = beat_clock(sheet['Lead'], audio_lead, shift)
     out = {}
     for p in PARTS:
         out[p] = [[n[0] + shift, round(max(0.0, f(n[1])), 2), round(max(0.12, f(n[1] + n[2]) - f(n[1])), 2)] for n in sheet[p]]
+    return out
+
+
+def load_score(work, tid, written_key=None):
+    """The arranger's own score (MuseScore / MusicXML / Finale .musx converted
+    with musx2mxl / legacy Finale .mus read by finale_mus), as
+    ({part: [[midi|None, beat, beats, syl, flags]]}, needs_check) or (None, False).
+    needs_check: the reading isn't certain (.mus) — use it only if it agrees
+    with the recording."""
+    import score_parts, finale_mus
+    f = f'{work}/notation/{tid}.mus'
+    if os.path.exists(f) and os.path.getsize(f) > 0:
+        try:
+            parts = finale_mus.to_parts(f, written_key)
+        except Exception:  # noqa: BLE001
+            parts = None
+        return (parts, True) if parts else (None, False)
+    for f in (f'{work}/notation/{tid}.mscz', f'{work}/notation/{tid}.xml', f'{work}/notation/{tid}.mxl', f'{work}/mxl/{tid}.mxl'):
+        if not (os.path.exists(f) and os.path.getsize(f) > 0):
+            continue
+        try:
+            parts, _ = score_parts.to_parts(f)
+        except Exception:  # noqa: BLE001 — unreadable or unusual layout
+            return None, False
+        if not parts or any(sum(1 for n in parts[p] if n[0] is not None) < 2 for p in PARTS):
+            return None, False
+        return parts, False
+    return None, False
+
+
+def score_word_anchors(score, heard):
+    """(beat, seconds) for the score's words, from where the recogniser heard them."""
+    starts, words = [], []
+    prev = ''
+    for m, beat, beats, syl, flags in score['Lead']:
+        if m is None or not syl:
+            continue
+        if not prev.endswith('-'):
+            starts.append(beat)
+            words.append(syl.rstrip('-'))
+        else:
+            words[-1] += syl.rstrip('-')
+        prev = syl
+    times = word_times(' '.join(words), heard) if words and heard else None
+    return [(b, t) for b, t in zip(starts, times or []) if t is not None]
+
+
+def score_times(score, audio_lead, shift, word_anchors=None):
+    """Score events → app notes [midi, start, dur, beats, syl, flags]; rests
+    become flagged notes ('r', keeping the previous pitch for display)."""
+    sung = {p: [[n[0], n[1], n[2]] for n in score[p] if n[0] is not None] for p in PARTS}
+    f = beat_clock(sung['Lead'], audio_lead, shift, word_anchors)
+    out = {}
+    for p in PARTS:
+        seq, last = [], None
+        for m, beat, beats, syl, flags in score[p]:
+            rest = m is None
+            pitch = (last if last is not None else next((x[0] for x in score[p] if x[0] is not None), 60)) if rest else m + shift
+            if not rest:
+                last = pitch
+            start = max(0.0, f(beat))
+            dur = max(0.08, f(beat + beats) - f(beat))
+            fl = flags + ('r' if rest else '')
+            note = [int(pitch), round(start, 2), round(dur, 2), round(float(beats), 3), '' if rest else (syl if syl is not None else None)]
+            if fl:
+                note.append(''.join(c for c in '|~r' if c in fl))
+            seq.append(note)
+        out[p] = seq
     return out
 
 
@@ -337,6 +417,30 @@ def add_rhythm(parts, sheet=None, shift=0):
     return parts
 
 
+def tag_record(t, source, with_lyrics, parts, cache, a):
+    has_tracks = all(t.get('_types', {}).get(p) == 'mp3' for p in PARTS)
+    tracks = {p: resolve_track(t.get(p), cache) for p in PARTS} if has_tracks else {}
+    json.dump(cache, open(a.cache, 'w'))
+    return {
+        'id': int(t['id']),
+        'title': t['Title'],
+        'alt': t.get('AltTitle') or '',
+        'version': t.get('Version') or '',
+        'arranger': t.get('Arranger') or '',
+        'writtenKey': t.get('WritKey') or '',
+        'lyrics': re.sub(r'\s+\n', '\n', (t.get('Lyrics') or '').strip()),
+        'downloads': int(t.get('Downloaded') or 0),
+        'rank': t['rank'],
+        'source': source,
+        'lyricsTimed': with_lyrics == 4,
+        'page': f"{SITE}tag-{t['id']}-{slug(t['Title'])}",
+        'sheet': t.get('SheetMusicAlt') or '',
+        'credit': ', '.join(x for x in [t.get('Quartet'), t.get('Teacher')] if x),
+        'tracks': tracks,
+        'parts': parts,
+    }
+
+
 # ---------------------------------------------------------------- main
 def decide(t, work, a):
     """Return (parts, source, info) or (None, reason, info)."""
@@ -350,6 +454,27 @@ def decide(t, work, a):
             info['agree'] = {p: tr[p]['agree'] for p in PARTS}
             audio_ok = (tr['resid'] <= a.max_resid and all(tr[p]['acc'] >= a.min_acc for p in PARTS)
                         and all(tr[p]['agree'] >= a.min_agree for p in PARTS) and plausible(audio))
+    score, needs_check = load_score(work, t['id'], t.get('WritKey'))
+    if score:
+        sung = {p: [[n[0], n[1], n[2]] for n in score[p] if n[0] is not None] for p in PARTS}
+        if plausible(sung):
+            shift, matched, mean = 0, False, 0.0
+            if audio:
+                mean, shift, sc = agreement(audio, sung)
+                info['score_agree'] = {p: round(v, 2) for p, v in sc.items()}
+                matched = mean >= 0.35
+                if not matched:          # the recording may be another arrangement/key: keep the written key
+                    shift = 0
+            if needs_check and mean < 0.55:
+                score = None             # an uncertain reading that the recording doesn't confirm
+        else:
+            score = None
+    if score:
+        info['shift'] = shift
+        wf = f'{work}/words/{t["id"]}.json'
+        heard = json.load(open(wf)).get('Lead', []) if os.path.exists(wf) else []
+        anchors = score_word_anchors(score, heard)
+        return score_times(score, audio['Lead'] if matched else None, shift, anchors), 'score', info
     sheet = None
     x = f'{work}/sheets/{t["id"]}.musicxml'
     if os.path.exists(x):
@@ -410,6 +535,21 @@ def main():
         if parts is None:
             rejected.append((t['rank'], t['Title'], source, {k: v for k, v in info.items() if not k.startswith('_')}))
             continue
+        if source == 'score':      # the arranger's score: notes, rhythm, ties, bars, rests, lyrics as written
+            lyr = t.get('Lyrics') or ''
+            if not any(n[4] for p in PARTS for n in parts[p]):
+                wf = f'{a.work}/words/{t["id"]}.json'
+                heard = json.load(open(wf)) if os.path.exists(wf) else {}
+                for p in PARTS:
+                    sung = [n for n in parts[p] if 'r' not in (n[5] if len(n) > 5 else '')]
+                    times = word_times(lyr, heard.get(p, [])) or word_times(lyr, heard.get('Lead', []))
+                    for n, sy in zip(sung, attach_syllables([n[:3] for n in sung], lyr, times)):
+                        n[4] = sy
+            with_lyrics = sum(1 for p in PARTS if any(n[4] for n in parts[p]))
+            stats[source] = stats.get(source, 0) + 1
+            tags.append(tag_record(t, source, with_lyrics, parts, cache, a))
+            print(len(tags), t['rank'], source, t['Title'], flush=True)
+            continue
         parts = {p: [list(n[:3]) for n in sorted(parts[p], key=lambda n: n[1])] for p in PARTS}
         sheet = info.get('_sheet')
         if source == 'sheet':     # pitches came from the sheet: take its rhythm directly
@@ -428,31 +568,12 @@ def main():
                 n.append(sy)
             with_lyrics += any(n[4] for n in parts[p])
         stats[source] = stats.get(source, 0) + 1
-        has_tracks = all(t.get('_types', {}).get(p) == 'mp3' for p in PARTS)
-        tracks = {p: resolve_track(t.get(p), cache) for p in PARTS} if has_tracks else {}
-        json.dump(cache, open(a.cache, 'w'))
-        tags.append({
-            'id': int(t['id']),
-            'title': t['Title'],
-            'alt': t.get('AltTitle') or '',
-            'version': t.get('Version') or '',
-            'arranger': t.get('Arranger') or '',
-            'writtenKey': t.get('WritKey') or '',
-            'lyrics': re.sub(r'\s+\n', '\n', (t.get('Lyrics') or '').strip()),
-            'downloads': int(t.get('Downloaded') or 0),
-            'rank': t['rank'],
-            'source': source,
-            'lyricsTimed': with_lyrics == 4,
-            'page': f"{SITE}tag-{t['id']}-{slug(t['Title'])}",
-            'sheet': t.get('SheetMusicAlt') or '',
-            'credit': ', '.join(x for x in [t.get('Quartet'), t.get('Teacher')] if x),
-            'tracks': tracks,
-            'parts': parts,
-        })
+        tags.append(tag_record(t, source, with_lyrics, parts, cache, a))
         print(len(tags), t['rank'], source, t['Title'], flush=True)
     out = {
         'source': 'barbershoptags.com API — metadata, lyrics, sheet-music and learning-track links. '
-                  'Notes transcribed from the learning tracks (demix + pYIN) and/or the sheet music (homr OMR).',
+                  'Notes from arrangers\' score files where available (MuseScore/MusicXML/Finale), else transcribed '
+                  'from the learning tracks (demix + pYIN) and/or the sheet music (homr OMR).',
         'generated': time.strftime('%Y-%m-%d'),
         'tags': tags,
     }

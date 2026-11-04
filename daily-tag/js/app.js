@@ -181,7 +181,7 @@ function showHome() {
       <ol class="path">
         ${pathTags.map((tg, i) => `<li data-tag="${tg.id}" data-title="${esc(tg.title.toLowerCase())}">
           <span class="num">${i + 1}</span>
-          <span class="tt"><b>${esc(tg.title)}${tg.source === 'verified' ? ' <span class="ver" title="Verified against the sheet music">✓</span>' : ''}</b><span class="muted small">${'●'.repeat(Math.max(1, Math.round(tg.difficulty / 2)))} ${esc(tg.arranger || '')}</span></span>
+          <span class="tt"><b>${esc(tg.title)}${tg.source === 'verified' || tg.source === 'score' ? ' <span class="ver" title="Checked against the arranger\'s score or sheet music">✓</span>' : ''}</b><span class="muted small">${'●'.repeat(Math.max(1, Math.round(tg.difficulty / 2)))} ${esc(tg.arranger || '')}</span></span>
           <span class="chips">${PARTS.map(p => partChip(tg, p)).join('')}</span>
         </li>`).join('')}
       </ol>
@@ -244,6 +244,7 @@ function showTag(id) {
 }
 
 const SOURCE_NOTE = {
+  score: '✓ Notes, rhythm and words from the arranger\'s own score file, timed to the learning tracks.',
   verified: '✓ Notes transcribed from the learning tracks and verified against the sheet music.',
   audio: 'Notes auto-transcribed from the learning tracks — may contain small errors; trust your ears and the sheet.',
   sheet: 'Notes read from the sheet music by OMR — may contain small errors; check the sheet.',

@@ -307,9 +307,12 @@ export function applyCorrections(rawTags, store) {
   const out = [];
   for (const t of rawTags) {
     const e = store && store[String(t.id)];
-    if (!e) { out.push(t); continue; }
+    // scores bring rests: lessons learn the sung notes, notation shows the written part
+    const hasRests = Object.values(t.parts).some(ns => ns.some(isRest));
+    const strip = ps => Object.fromEntries(Object.entries(ps).map(([p, ns]) => [p, stripRests(ns)]));
+    if (!e) { out.push(hasRests ? { ...t, written: { ...t.parts }, parts: strip(t.parts) } : t); continue; }
     if (e.hide) continue;
-    const parts = { ...t.parts };
+    const parts = hasRests ? strip(t.parts) : { ...t.parts };
     const written = { ...t.parts };     // with rests, for notation and the review screen
     const checked = {};
     for (const [p, c] of Object.entries(e.parts || {})) {

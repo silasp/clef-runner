@@ -233,7 +233,7 @@ function render() {
   const sel = Math.min(Math.max(view.sel, from), to - 1);
   view.sel = sel;
   const selNote = view.notes[sel];
-  const sourceLabel = { verified: '✓ recordings + sheet agree', audio: 'from the recordings', sheet: 'read from the sheet music' }[tag.source] || tag.source;
+  const sourceLabel = { score: "✓ from the arranger's score", verified: '✓ recordings + sheet agree', audio: 'from the recordings', sheet: 'read from the sheet music' }[tag.source] || tag.source;
 
   app.innerHTML = `
   <main class="screen review">

@@ -113,7 +113,26 @@ WRONG=1 node tests/e2e/sing.mjs 0 Lead  # the same phrase a minor third off → 
 
 ## How the tag data was made
 
-Every tag gets **two independent transcriptions**, and they check each other.
+**0. The arranger's own score, where there is one** (`tools/fetch_scores.py`, `tools/score_parts.py`, `tools/finale_mus.py`)
+
+barbershoptags.com links many tags to the arranger's notation file. Of the 761 tags with learning tracks, 286 have one:
+
+| Format | Tags | Read with |
+|---|---|---|
+| MuseScore `.mscz` (versions 1–4) | 47 | `score_parts.py` (the zipped `.mscx` XML) |
+| MusicXML `.xml`/`.mxl` | 10 | `score_parts.py` |
+| Finale `.musx` (2014+) | 33 | [`musx2mxl`](https://pypi.org/project/musx2mxl/) → MusicXML → `score_parts.py` |
+| Finale `.mus` (legacy) | 149 | `finale_mus.py` — a reader written for this project (no open-source one existed; format notes in the file) |
+| Sibelius `.sib` | 45 | — (closed format; needs Sibelius to export MusicXML) |
+| NoteWorthy `.nwc` | 2 | — |
+
+* A score gives exact pitches, rhythm, ties, rests, barlines and (except `.mus`) lyrics. Parts come from the layout: four staves, or two staves with two voices each (upper voice = Tenor/Bari), or chords split by register. Octaves are normalised by the music (Lead around B3, Bass around B2, Tenor above Bari), since files disagree about tenor-clef octaves.
+* The score is shifted into the key of the learning tracks and timed to them: matched Lead notes anchor beats to seconds; failing that, the words where speech recognition heard them.
+* `.mus` readings can't name each voice's staff, so they're used only when they agree with the recording.
+* Result: 176 tags come straight from the arranger's score (source `score`).
+* `tools/score_check.py` measures the library against the scores (and against [numtags](https://github.com/bumbleblue/numtags)' independent transcriptions). Before this step the transcribed tags matched the arrangers' scores with a mean F1 of about 0.87 on pitch sequences — roughly one note in seven wrong or missing.
+
+Every other tag gets **two independent transcriptions**, and they check each other.
 
 **1. From the learning tracks** (`tools/extract_notes.py`)
 
@@ -138,6 +157,7 @@ Every tag gets **two independent transcriptions**, and they check each other.
 
 | Source | When | Notes used |
 |---|---|---|
+| ✓ `score` | The arranger's score file is readable (and, for `.mus`, agrees with the recording) | Score, timed to the recording |
 | ✓ `verified` | Audio and sheet agree (any transposition) | Audio (timing matches the real recordings) |
 | `audio` | No usable sheet, but the audio passes its own checks | Audio |
 | `sheet` | Audio unusable or no learning tracks, but the sheet is plausible and matches the recording's Lead | Sheet pitches, timed by anchoring the sheet's Lead to the recorded Lead |
@@ -149,6 +169,7 @@ python3 tools/extract_notes.py --work work --pages 25 --limit 761 download
 python3 tools/extract_notes.py --work work --pages 25 --limit 761 process --workers 3 --wait
 python3 tools/omr_batch.py --work work --top 1000 --homr homr
 python3 tools/align_lyrics.py --work work --parts Lead          # then Bass,Tenor,Bari
+python3 tools/fetch_scores.py --work work --top 1000                # arrangers' score files (+ musx2mxl)
 python3 tools/build_tags.py --work work --top 1000
 python3 tools/test_build.py                                     # self-test of the build helpers
 ```

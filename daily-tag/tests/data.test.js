@@ -9,7 +9,7 @@ const PARTS = ['Tenor', 'Lead', 'Bari', 'Bass'];
 test('library holds hundreds of tags from the top 1000', () => {
   assert.ok(raw.tags.length >= 300, `only ${raw.tags.length} tags`);
   for (const t of raw.tags) {
-    assert.ok(['verified', 'audio', 'sheet'].includes(t.source), `${t.title} source ${t.source}`);
+    assert.ok(['score', 'verified', 'audio', 'sheet'].includes(t.source), `${t.title} source ${t.source}`);
     assert.ok(t.rank <= 1000);
   }
 });
