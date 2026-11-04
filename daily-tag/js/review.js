@@ -49,7 +49,7 @@ export function initReview(e) {
  * MuseScore-style shortcuts on the correction screen:
  *   3–7 length (16th, 8th, quarter, half, whole) · . dot · A–G pitch (in the key,
  *   nearest the previous note; then the next note is selected) · ↑/↓ semitone ·
- *   Ctrl/⌘+↑/↓ octave · ←/→ select · T tie · R or 0 rest · | barline ·
+ *   Ctrl/⌘+↑/↓ octave · ←/→ select · T tie · R or 0 rest · L barline ·
  *   Delete remove · Ctrl/⌘+Z undo · Space play/stop ours
  */
 function onHotkey(e) {
@@ -76,7 +76,7 @@ function onHotkey(e) {
     render();
   } else if (k === 't' || k === 'T') click('[data-op=tie]');
   else if (k === 'r' || k === 'R' || k === '0') click('[data-op=rest]');
-  else if (k === '|') click('[data-op=bar]');
+  else if (k === 'l' || k === 'L' || k === '|') click('[data-op=bar]');
   else if (k === 'Delete' || k === 'Backspace') click('[data-op=delete]');
   else if (k === ' ') { if (app.querySelector('.nchip.playing')) { audio.stopAll(); highlight(-1); } else click('[data-act=play]'); }
   else if (k === 'Escape') { audio.stopAll(); highlight(-1); }
@@ -299,7 +299,7 @@ function render() {
           <button class="sm ${C.hasFlag(selNote, '|') ? 'on' : ''}" data-op="bar" ${sel > 0 ? '' : 'disabled'} title="Barline before this note">┃ Bar before</button>
           <button class="sm ${C.hasFlag(selNote, '~') ? 'on' : ''}" data-op="tie" ${view.notes[sel + 1] && view.notes[sel + 1][0] === selNote[0] ? '' : 'disabled'} title="Tie to the next note (same pitch, held — not sung again)">⁀ Tie to next</button>
         </div>
-        <p class="muted small kbd-help">Keyboard: <kbd>A</kbd>–<kbd>G</kbd> pitch · <kbd>3</kbd>–<kbd>7</kbd> length · <kbd>.</kbd> dot · <kbd>↑</kbd><kbd>↓</kbd> semitone (<kbd>Ctrl</kbd> octave) · <kbd>←</kbd><kbd>→</kbd> select · <kbd>T</kbd> tie · <kbd>R</kbd> rest · <kbd>|</kbd> barline · <kbd>Del</kbd> delete · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Space</kbd> play</p>
+        <p class="muted small kbd-help">Keyboard: <kbd>A</kbd>–<kbd>G</kbd> pitch · <kbd>3</kbd>–<kbd>7</kbd> length · <kbd>.</kbd> dot · <kbd>↑</kbd><kbd>↓</kbd> semitone (<kbd>Ctrl</kbd> octave) · <kbd>←</kbd><kbd>→</kbd> select · <kbd>T</kbd> tie · <kbd>R</kbd> rest · <kbd>L</kbd> barline · <kbd>Del</kbd> delete · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Space</kbd> play</p>
         <div class="edit-bar autobar">
           <button class="sm" data-op="autobar" title="Treat the selected note as a downbeat and place barlines every bar from here">Bars from here, every</button>
           <select name="perBar" aria-label="Beats per bar">${[2, 3, 4, 6].map(b => `<option value="${b}" ${b === (view.perBar || 4) ? 'selected' : ''}>${b} beats</option>`).join('')}</select>

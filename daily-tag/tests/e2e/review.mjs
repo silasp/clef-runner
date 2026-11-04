@@ -112,6 +112,10 @@ assert.equal((await notesNow())[4][0], ns[4][0], 'undo');
 await page.keyboard.press('r');
 assert.match((await notesNow())[4][5] || '', /r/, 'R makes a rest');
 await page.keyboard.press('r');
+const barBefore = /\|/.test((await notesNow())[4][5] || '');
+await page.keyboard.press('l');
+assert.equal(/\|/.test((await notesNow())[4][5] || ''), !barBefore, 'L toggles the barline');
+await page.keyboard.press('l');
 
 // rests: a note becomes a rest (drawn as one, silent, no words) and back
 await page.click('.nchip >> nth=3');
