@@ -566,8 +566,9 @@ function hyphens(x1, x2, y) {
 }
 
 /** Simple contour (melodic shape) as an SVG polyline — used for "which did you hear?". */
-export function renderContour(midis, { width = 260, height = 46 } = {}) {
-  const lo = Math.min(...midis) - 1, hi = Math.max(...midis) + 1;
+export function renderContour(midis, { width = 260, height = 46, range } = {}) {
+  // `range` [lo, hi] puts several contours on one scale, so they compare fairly
+  const lo = (range ? range[0] : Math.min(...midis)) - 1, hi = (range ? range[1] : Math.max(...midis)) + 1;
   const span = Math.max(4, hi - lo);
   const dx = width / Math.max(1, midis.length);
   const pts = midis.map((m, i) => {

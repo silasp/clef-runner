@@ -487,7 +487,7 @@ const RENDER = {
     body.innerHTML = `
       <p class="prompt">Listen — which shape is the tune?</p>
       <div class="btns center"><button class="big-play" data-act="hear">🔊</button></div>
-      <div class="options col">${q.options.map((v, i) => `<button class="opt contour-opt" data-i="${i}">${renderContour(v)}</button>`).join('')}</div>`;
+      <div class="options col">${q.options.map((v, i) => `<button class="opt contour-opt" data-i="${i}">${renderContour(v, { range: q.range })}</button>`).join('')}</div>`;
     const play = () => { audio.stopAll(); audio.playNotes(notes, { even: true }); };
     $('[data-act=hear]', body).onclick = play;
     setTimeout(play, 250);
