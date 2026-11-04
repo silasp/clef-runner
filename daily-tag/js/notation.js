@@ -61,6 +61,7 @@ export function rhythmGlyph(beats) {
     [1, { hollow: false, stem: true, flags: 0, dot: false }],
     [0.75, { hollow: false, stem: true, flags: 1, dot: true }],
     [0.5, { hollow: false, stem: true, flags: 1, dot: false }],
+    [0.375, { hollow: false, stem: true, flags: 2, dot: true }],
     [0.25, { hollow: false, stem: true, flags: 2, dot: false }],
   ];
   let best = table[0];

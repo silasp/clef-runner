@@ -312,7 +312,7 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 .rq .rq-s i { font-style: normal; display: inline-block; width: 1.1em; text-align: center; color: var(--good); }
 .rq li.done { opacity: .6; }
 .rv-actions .go { border: 0; border-radius: 12px; padding: 12px; font-weight: 700; font-size: 1rem; }
-.len-bar { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; margin: 6px 0; }
+.len-bar { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 3px; margin: 6px 0; }
 .len-bar .sm { padding: 4px 0; min-height: 40px; display: flex; align-items: center; justify-content: center; }
 .len-ico { stroke: currentColor; stroke-width: 1.4; }
 .len-ico .f { fill: currentColor; stroke: none; }
@@ -336,3 +336,6 @@ h2 { font-size: 1.05rem; margin: .8em 0 .4em; }
 .nchip b.rest { font-weight: 600; font-style: italic; color: var(--muted); }
 .staff-wrap.live .st-rest.line.cur { fill: none; stroke: var(--gold); }
 .edit-bar .sm { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+.len-bar .dot { font-size: .8rem; white-space: nowrap; }
+.len-bar .sm:disabled { opacity: .35; }
+.toast { pointer-events: none; }

@@ -10,10 +10,17 @@ import * as audio from './audio.js';
 import { rhythmGlyph } from './notation.js';
 import { mountKeyboard, rangeFor } from './keyboard.js';
 
-const LENGTHS = [
-  [0.25, 'sixteenth'], [0.5, 'eighth'], [0.75, 'dotted eighth'], [1, 'quarter'],
-  [1.5, 'dotted quarter'], [2, 'half'], [3, 'dotted half'], [4, 'whole'],
-];
+const LENGTHS = [[0.25, 'sixteenth'], [0.5, 'eighth'], [1, 'quarter'], [2, 'half'], [4, 'whole']];
+
+/** Split a length in beats into its plain value and whether it is dotted. */
+export function lengthParts(beats) {
+  const b = Number(beats) || 0;
+  for (const [base] of LENGTHS) {
+    if (Math.abs(b - base) < 0.01) return { base, dotted: false };
+    if (Math.abs(b - base * 1.5) < 0.01) return { base, dotted: true };
+  }
+  return { base: null, dotted: false };
+}
 
 const REST_ICON = '<svg viewBox="0 0 14 30" width="10" height="22" aria-hidden="true" class="len-ico"><path d="M5 3 l5 7 l-5 6 l5 6 q-7 -2 -4 6" class="fl"/></svg>';
 
@@ -237,7 +244,11 @@ function render() {
           <button class="sm" data-op="oct-up" title="Octave up">8va ▲</button>
         </div>
         <div class="len-bar" role="group" aria-label="Length of the selected note">
-          ${LENGTHS.map(([b, name]) => `<button class="sm len ${Math.abs((selNote[3] || 0) - b) < 0.01 ? 'on' : ''}" data-len="${b}" title="${name}" aria-label="${name}">${lengthIcon(b)}</button>`).join('')}
+          ${(() => {
+            const { base, dotted } = lengthParts(selNote[3]);
+            return LENGTHS.map(([b, name]) => `<button class="sm len ${base === b ? 'on' : ''}" data-len="${b}" title="${name}" aria-label="${name}">${lengthIcon(b)}</button>`).join('')
+              + `<button class="sm len dot ${dotted ? 'on' : ''}" data-op="dot" title="Dotted (half as long again)" aria-label="Dotted" aria-pressed="${dotted}" ${base ? '' : 'disabled'}>dot&nbsp;•</button>`;
+          })()}
         </div>
         <div class="edit-bar" role="group" aria-label="Barlines and ties">
           <button class="sm ${C.hasFlag(selNote, '|') ? 'on' : ''}" data-op="bar" ${sel > 0 ? '' : 'disabled'} title="Barline before this note">┃ Bar before</button>
@@ -325,6 +336,11 @@ function bind() {
       case 'bar': edit(n => C.toggleFlag(n, i, '|'), { keepSel: true }); break;
       case 'tie': edit(n => C.toggleFlag(n, i, '~'), { keepSel: true }); break;
       case 'rest': edit(n => C.toggleRest(n, i), { keepSel: true }); if (!C.isRest(view.notes[i])) sound(); break;
+      case 'dot': {
+        const { base, dotted } = lengthParts(view.notes[i][3]);
+        if (base) edit(n => C.setBeats(n, i, dotted ? base : base * 1.5), { keepSel: true });
+        break;
+      }
       case 'autobar': edit(n => C.autoBars(n, i, view.perBar || 4), { keepSel: true }); break;
       case 'undo': {
         const u = view.undo.pop();
@@ -333,7 +349,11 @@ function bind() {
       }
     }
   });
-  app.querySelectorAll('[data-len]').forEach(b => b.onclick = () => edit(n => C.setBeats(n, view.sel, Number(b.dataset.len)), { keepSel: true }));
+  // plain value buttons keep the dot if the note is dotted; the dot button toggles it
+  app.querySelectorAll('[data-len]').forEach(b => b.onclick = () => {
+    const { dotted } = lengthParts(view.notes[view.sel][3]);
+    edit(n => C.setBeats(n, view.sel, Number(b.dataset.len) * (dotted ? 1.5 : 1)), { keepSel: true });
+  });
   const per = $('select[name=perBar]', app);
   per.onchange = () => { view.perBar = Number(per.value); };
   // keyboard: tap a key to set the selected note's pitch
