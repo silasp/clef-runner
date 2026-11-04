@@ -2,7 +2,7 @@
 // One part per tune (the melody), learned chunk by chunk with spaced repetition.
 
 import { noteName, scaleDegree, keyName } from './music.js';
-import { cardId, itemNotes, partStatus, nextNewItem, ensureCard } from './curriculum.js';
+import { cardId, itemNotes, partStatus, nextNewItem, ensureCard, markKnown, unmarkKnown, isKnownSkip } from './curriculum.js';
 import { buildLesson, nextNoteQuestion, listenChooseQuestion, makeRng, allowed, EXERCISE_TYPES } from './lesson.js';
 import { review, dayNumber, dueCards, cueMask, LEARNED_LEVEL, MEMORISED_LEVEL } from './srs.js';
 import { XP, addXp, goalProgress, level as levelOf, checkBadges, setSkip, capabilities, rollStreak, BADGES, initialState } from './game.js';
@@ -153,6 +153,7 @@ function showHome() {
         ${next ? `<div class="muted small">${meta(next.tag)}</div>${chunkBar(next.tag)}` : ''}
         ${learnedToday.length ? `<div class="payoff">✅ Learned today: ${learnedToday.map(m => esc((BY_ID[m.tagId] || {}).title) + ' · ' + (m.phrase === 'all' ? 'whole tune!' : `#${m.phrase + 1}`)).join(', ')}</div>` : ''}
         <button class="big go" data-act="start">${learnedToday.length ? 'Keep going' : 'Start'} · ~3 min</button>
+        ${next ? `<button class="link know" data-act="know">✓ I already know this tune — skip it</button>` : ''}
         <div class="muted small">${due ? `${due} review${due > 1 ? 's' : ''} due` : 'No reviews due'}</div>
       </div>
       ${modeToggles()}
@@ -172,6 +173,8 @@ function showHome() {
     </footer>
   </main>`;
   $('[data-act=start]').onclick = () => { audio.unlock(); startLesson(); };
+  const know = $('[data-act=know]');
+  if (know) know.onclick = () => { skipKnown(next.tag); showHome(); };
   bindModeToggles(app);
   const list = $('.path');
   const bindRows = () => list.querySelectorAll('li').forEach(li => li.onclick = () => { location.hash = 'tune/' + li.dataset.tune; });
@@ -202,7 +205,10 @@ function showTune(id) {
     <div class="btns">
       <button class="sm" data-act="play">▶ Play the tune</button>
       <button class="sm primary" data-act="learn">${st.learned ? 'Practise' : st.introduced ? 'Keep learning' : 'Learn it'}</button>
+      ${isKnownSkip(state.cards, tune.id, PART) ? '<button class="sm" data-act="unknow">↩ Undo “I know it”</button>'
+        : !st.learned ? '<button class="sm" data-act="know">✓ I already know it</button>' : ''}
     </div>
+    ${isKnownSkip(state.cards, tune.id, PART) ? `<p class="muted small">Skipped as known — it comes back as a whole-tune review ${dueText(tune)}. Get it right and it moves towards memorised; miss it and you'll learn it chunk by chunk.</p>` : ''}
     <div class="staff-wrap">${staffHtml(tune, notes, { rhythm: true, final: true })}</div>
     <div class="links small muted">Source: ${esc(tune.source)}${tune.style ? ` · ${esc(tune.style)}` : ''}.
       ${st.memorised}/${st.phrases} chunks memorised${st.done ? ' · whole tune memorised ★' : ''}.</div>
@@ -213,6 +219,23 @@ function showTune(id) {
     audio.playNotes(notes, { rate: tempo(), onNote: i => { wrap.innerHTML = staffHtml(tune, notes, { rhythm: true, final: true, highlight: i }); } });
   };
   $('[data-act=learn]').onclick = () => { audio.unlock(); startLesson({ tagId: tune.id, part: PART }); };
+  const know = $('[data-act=know]');
+  if (know) know.onclick = () => { skipKnown(tune); showTune(id); };
+  const unknow = $('[data-act=unknow]');
+  if (unknow) unknow.onclick = () => { unmarkKnown(state.cards, tune.id, PART); persist(); toast('Back on your learning path'); showTune(id); };
+}
+
+/** "I already know this tune": straight to spaced review, off the learning path. */
+function skipKnown(tune) {
+  markKnown(state.cards, tune.id, PART, today());
+  persist();
+  toast('Skipped ✓ — a quick review in 2 days');
+}
+
+function dueText(tune) {
+  const c = state.cards[cardId(tune.id, PART, 'all')];
+  const d = c ? c.due - today() : 0;
+  return d <= 0 ? 'today' : d === 1 ? 'tomorrow' : `in ${d} days`;
 }
 
 // ---------------------------------------------------------------- settings
@@ -326,6 +349,7 @@ function renderExercise() {
       <div class="skips">
         ${ex.type === 'sing' ? '<button class="link" data-act="skip-sing">🤐 Can\'t sing now</button>' : ''}
         ${needsListen ? '<button class="link" data-act="skip-listen">🔇 Can\'t listen now</button>' : ''}
+        ${ex.type === 'intro' && ex.phrase === 0 && !ex.review ? '<button class="link" data-act="know">✓ I know this tune</button>' : ''}
         <button class="link" data-act="skip">Skip</button>
       </div>
       <div class="feedback" hidden></div>
@@ -335,7 +359,16 @@ function renderExercise() {
   $('[data-act=skip]').onclick = () => next();
   const sl = $('[data-act=skip-listen]');
   if (sl) sl.onclick = () => { setSkip(state, 'listen', Date.now()); persist(); swapForSilent(); };
-  const ss = $('[data-act=skip-sing]');
+  const kn = $('[data-act=know]');
+  if (kn) kn.onclick = () => {
+    skipKnown(tag);
+    // drop the rest of this tune's new-chunk exercises; keep reviews
+    lesson.exercises = lesson.exercises.filter((e, k) => k < lesson.i || e.review || e.tagId !== tag.id);
+    // nothing done yet and nothing left: go straight on to the next tune
+    if (lesson.i >= lesson.exercises.length && !lesson.grades.length) startLesson();
+    else renderExercise();
+  };
+    const ss = $('[data-act=skip-sing]');
   if (ss) ss.onclick = () => { setSkip(state, 'sing', Date.now()); persist(); swapForSilent(); };
   const body = $('.ex-body');
   RENDER[ex.type]({ ex, tag, notes, card, cue, body, finish: r => finishExercise(ex, r) });

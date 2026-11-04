@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { splitPhrases, prepareTags, nextNewItem, learningQueue, partStatus, cardId, partOrder, itemNotes, learnedParts, tagStatus } from '../js/curriculum.js';
-import { newCard } from '../js/srs.js';
+import { splitPhrases, prepareTags, nextNewItem, learningQueue, partStatus, cardId, partOrder, itemNotes, learnedParts, tagStatus, markKnown, unmarkKnown, isKnownSkip } from '../js/curriculum.js';
+import { newCard, review, dueCards } from '../js/srs.js';
 import { fakeTag } from './fixtures.js';
 
 test('splitPhrases breaks on rests / held notes and keeps 3–9 notes', () => {
@@ -62,4 +62,24 @@ test('forward chaining chunk by chunk, then the whole tune, then the next tune',
   assert.equal(tagStatus(t, cards).learnedParts, 1);
   cards[cardId('1', 'Melody', 'all')].level = 4;
   assert.ok(partStatus(t, 'Melody', cards).done);
+});
+
+test('"I already know this" skips to the next tune, reviews it later, and can be undone', () => {
+  const tags = prepareTags([fakeTag(1, 60, 8), fakeTag(2, 60, 30)]);
+  const cards = {};
+  markKnown(cards, '1', 'Melody', 100);
+  assert.equal(nextNewItem(tags, cards, 'Melody', 'tag-by-tag', 'melody').tag.id, '2', 'moves on');
+  assert.ok(isKnownSkip(cards, '1', 'Melody'));
+  assert.equal(dueCards(cards, 100).length, 0);
+  assert.equal(dueCards(cards, 102).length, 1, 'comes back as a review');
+  // undo while unreviewed
+  assert.ok(unmarkKnown(cards, '1', 'Melody'));
+  assert.equal(nextNewItem(tags, cards, 'Melody', 'tag-by-tag', 'melody').tag.id, '1');
+  // a failed review sends it back to learning from chunk 1
+  markKnown(cards, '1', 'Melody', 100);
+  const id = cardId('1', 'Melody', 'all');
+  cards[id] = review(cards[id], 0.2, 102, 3);
+  const it = nextNewItem(tags, cards, 'Melody', 'tag-by-tag', 'melody');
+  assert.deepEqual([it.tag.id, it.phrase], ['1', 0]);
+  assert.ok(!unmarkKnown(cards, '1', 'Melody'), 'no undo after a review');
 });

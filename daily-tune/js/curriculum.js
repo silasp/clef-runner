@@ -2,7 +2,7 @@
 // what to learn next (easy tags first, forward-chaining phrases).
 
 import { PARTS, detectKey, partDifficulty, parseWrittenKey } from './music.js';
-import { isMemorised, newCard, LEARNED_LEVEL } from './srs.js';
+import { isMemorised, newCard, LEARNED_LEVEL, INTERVAL_DAYS } from './srs.js';
 
 /**
  * Split one part's notes ([midi, start, dur]) into phrases.
@@ -153,4 +153,33 @@ export function prepareTags(raw) {
     const difficulty = Math.round(PARTS.reduce((a, p) => a + diff[p], 0) / PARTS.length * 10) / 10;
     return { ...t, id: String(t.id), tonic, key, phrases, partDifficulty: diff, difficulty };
   });
+}
+
+/**
+ * "I already know this": skip the chunk-by-chunk lessons and put the whole
+ * part straight into spaced review as recalled (level 2), due in a couple
+ * of days. A good review takes it on towards memorised; a failed one drops
+ * it below "learned", and learning resumes from the first chunk.
+ */
+export function markKnown(cards, tagId, part, today) {
+  const id = cardId(tagId, part, 'all');
+  const c = cards[id] || newCard(id);
+  cards[id] = { ...c, level: Math.max(c.level, LEARNED_LEVEL), reps: Math.max(1, c.reps), last: today,
+    due: today + INTERVAL_DAYS[LEARNED_LEVEL], known: true };
+  return cards[id];
+}
+
+/** Undo markKnown — only while that review hasn't happened yet. */
+export function unmarkKnown(cards, tagId, part) {
+  const id = cardId(tagId, part, 'all');
+  const c = cards[id];
+  if (!c || !c.known || c.reps > 1) return false;
+  delete cards[id];
+  return true;
+}
+
+/** Whether the part was skipped as already known (and not yet reviewed). */
+export function isKnownSkip(cards, tagId, part) {
+  const c = cards[cardId(tagId, part, 'all')];
+  return !!c && !!c.known && c.reps <= 1;
 }

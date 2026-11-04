@@ -368,3 +368,5 @@ kbd { font: inherit; font-size: .75rem; padding: 0 4px; border: 1px solid var(--
 .tagpage .staff-wrap { margin-top: 12px; }
 .typing-help { margin-top: 8px; }
 .typing-help kbd { font: inherit; font-size: .85em; padding: 0 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--card); }
+.link.know { display: block; margin: 8px auto 0; font-size: .85rem; }
+.toast { border-radius: 14px; max-width: min(88vw, 360px); text-align: center; }
