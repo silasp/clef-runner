@@ -1,5 +1,6 @@
 // Offline cache for the app shell + tune data (network-first, so updates arrive).
 
+const CACHE = 'daily-tune-v5';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png',
   'data/tunes.json', 'icons/icon-192.png', 'icons/icon-512.png',
