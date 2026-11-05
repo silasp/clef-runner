@@ -22,15 +22,22 @@ export function unlock() {
     master = ctx.createGain();
     master.gain.value = 0.7;
     master.connect(ctx.destination);
-    // iOS 16.4+/17: play through the silent switch
-    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* ignore */ }
+    // iOS 16.4+/17: play through the silent switch (switched to recording while the mic is open)
+    setSession('playback');
   }
-  if (ctx.state === 'suspended') ctx.resume();
+  // iOS can leave the context "suspended" or "interrupted" (e.g. after the mic opens or a call)
+  if (ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => {});
   // tiny silent buffer kicks older iOS into gear
   const b = ctx.createBuffer(1, 1, 22050);
   const src = ctx.createBufferSource();
   src.buffer = b; src.connect(ctx.destination); src.start(0);
   return ctx;
+}
+
+/** iOS audio session: 'playback' plays through the silent switch but blocks the
+ *  microphone; 'play-and-record' is needed while singing. No-op elsewhere. */
+export function setSession(type) {
+  try { if (typeof navigator !== 'undefined' && navigator.audioSession && navigator.audioSession.type !== type) navigator.audioSession.type = type; } catch (e) { /* ignore */ }
 }
 
 export function setVolume(v) { if (master) master.gain.value = v; }

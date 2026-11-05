@@ -57,6 +57,16 @@ const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 // headless Chromium has no speech service: test pitch only
 await page.addInitScript(() => localStorage.setItem('daily-tag:v1', JSON.stringify({ settings: { speech: false } })));
+// a stand-in for iOS's audio session: like iOS, it refuses the mic while set to 'playback'
+await page.addInitScript(() => {
+  const log = [];
+  let type = 'auto';
+  navigator.audioSession = { get type() { return type; }, set type(v) { type = v; log.push(v); } };
+  window.__sessionLog = log;
+  const gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+  navigator.mediaDevices.getUserMedia = c => (type === 'playback'
+    ? Promise.reject(Object.assign(new Error('audio session is playback'), { name: 'InvalidStateError' })) : gum(c));
+});
 await page.goto(`${BASE}#drill/sing/${tag.id}/${part}/0`);
 await page.waitForSelector('[data-act=rec]');
 await page.click('[data-act=rec]');
@@ -67,5 +77,8 @@ if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/sing-
 console.log(`${tag.title} / ${part} phrase 1 (${phrase.length} notes): pitch ${pct}%  — ${fb.replace(/\s+/g, ' ').trim()}`);
 if (wrong) assert.ok(pct < 60, 'singing a minor third off should not pass (grade < 60% = fail)');
 else assert.ok(pct >= 80, 'a correctly sung phrase should score well');
+const sessions = await page.evaluate(() => window.__sessionLog);
+assert.ok(sessions.includes('play-and-record'), 'records with a play-and-record session: ' + sessions);
+assert.equal(sessions[sessions.length - 1], 'playback', 'back to playback once the mic closes: ' + sessions);
 assert.deepEqual(errors, []);
 await browser.close();

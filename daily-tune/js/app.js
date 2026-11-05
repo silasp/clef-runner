@@ -11,7 +11,7 @@ import { renderStaff, renderContour } from './notation.js';
 import { mountKeyboard, rangeFor, hasKeyboard } from './keyboard.js';
 import { framesToNotes, alignPitches, combineScores } from './scoring.js';
 import * as audio from './audio.js';
-import { listen, hasMic } from './mic.js';
+import { listen, hasMic, releaseMic, micError } from './mic.js';
 import { prepareTunes } from './tunes.js';
 
 const PART = 'Melody';
@@ -60,6 +60,7 @@ function filterGenre() {
 
 function route() {
   audio.stopAll();
+  releaseMic();
   const h = location.hash.slice(1);
   if (h.startsWith('tune/')) return showTune(h.slice(5));
   if (h === 'settings') return showSettings();
@@ -422,6 +423,7 @@ function finishExercise(ex, r) {
 
 function next() {
   audio.stopAll();
+  releaseMic();
   lesson.i++;
   renderExercise();
 }
@@ -653,7 +655,7 @@ function singExercise({ tag, notes, body, finish, cue }) {
     } catch (e) {
       session = null;
       rec.disabled = false; rec.textContent = '🎤 Go';
-      $('.status', body).textContent = 'Microphone unavailable — tap "Can\'t sing now" to switch to tapping.';
+      $('.status', body).textContent = `${micError(e)} Or tap "Can't sing now" to switch to tapping.`;
       return;
     }
     rec.disabled = false;
@@ -669,6 +671,7 @@ function singExercise({ tag, notes, body, finish, cue }) {
     const s = session; session = null;
     rec.disabled = true; rec.textContent = 'Scoring…';
     const res = await s.stop();
+    releaseMic();
     const sung = framesToNotes(res.frames).map(x => x.midi);
     const al = alignPitches(sung, midis, { octaveFree });
     const grade = combineScores(al.score, null);

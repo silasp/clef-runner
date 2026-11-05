@@ -5,7 +5,7 @@
 
 import { detectPitch } from './pitch.js';
 import { freqToMidi } from './music.js';
-import { unlock } from './audio.js';
+import { unlock, setSession } from './audio.js';
 
 let stream = null;
 
@@ -19,15 +19,37 @@ export function hasSpeech() {
 
 async function getStream() {
   if (stream && stream.getTracks().some(t => t.readyState === 'live')) return stream;
-  stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-  });
+  // iOS: a 'playback' audio session refuses the microphone
+  setSession('play-and-record');
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+  } catch (e) {
+    setSession('playback');
+    unlock();
+    throw e;
+  }
+  unlock();   // opening the mic can interrupt the audio context on iOS
   return stream;
 }
 
+/** Close the microphone (and give iOS back its loud, silent-switch-proof playback). */
 export function releaseMic() {
-  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (!stream) return;
+  stream.getTracks().forEach(t => t.stop());
   stream = null;
+  setSession('playback');
+  unlock();
+}
+
+/** A short, human reason for a microphone failure. */
+export function micError(e) {
+  const n = e && e.name;
+  if (n === 'NotAllowedError' || n === 'SecurityError') return 'The microphone is blocked for this site. Allow it in your browser\'s site settings (on iPhone: Settings › your browser › Microphone), then try again.';
+  if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'No microphone found.';
+  if (n === 'NotReadableError' || n === 'AbortError') return 'The microphone is busy (another app or call?). Close it and try again.';
+  return `Microphone unavailable${n ? ` (${n})` : ''}.`;
 }
 
 /**
