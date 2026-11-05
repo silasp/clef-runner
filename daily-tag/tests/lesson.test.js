@@ -96,3 +96,25 @@ test('listen-and-choose options all have different shapes, on one scale', () => 
     assert.deepEqual(q.range, [Math.min(...all), Math.max(...all)]);
   }
 });
+
+test('split syllables are mended using the tag\'s own lyrics', async () => {
+  const { mendWords, hasLyricGap } = await import('../js/lesson.js');
+  const lyr = 'Do You Want to Sing a Tag?';
+  const syl = arr => arr.map((s, i) => [60, i, 1, 1, s]);
+  assert.equal(sungWords(syl(['A', 'Ta', '', 'g']), lyr), 'A Tag');
+  assert.equal(sungWords(syl(['a', 'Ta-', 'ag']), lyr), 'a Tag');
+  assert.equal(sungWords(syl(['sing', 'a', 'Ta', 'ag']), lyr), 'sing a Tag');
+  assert.equal(sungWords(syl(['beau-', 'ti-', 'ful', 'life']), 'beautiful life'), 'beautiful life');
+  assert.deepEqual(mendWords(['beau', 'ti', 'ful'], 'my beautiful friends'), ['beautiful']);
+  assert.deepEqual(mendWords(['to', 'old'], 'I told you to get old'), ['to', 'old'], 'real words are never glued');
+  assert.deepEqual(mendWords(['Ta', 'g'], ''), ['Ta', 'g'], 'no lyrics, no guessing');
+  assert.ok(!hasLyricGap('A Ta g'));
+  assert.ok(hasLyricGap('A Tag'));
+});
+
+test('no gap-fill is planned when there is no word to blank', () => {
+  const t = prepareTags([fakeTag(9, 60, 6, { lyrics: 'oh a' })])[0];
+  for (const p of Object.keys(t.parts)) t.parts[p].forEach(n => { n[4] = ''; });
+  const { exercises } = buildLesson({ tags: [t], cards: {}, today: 10, myPart: 'Lead', canListen: true, canSing: true });
+  assert.ok(!exercises.some(e => e.type === 'lyricGap'));
+});

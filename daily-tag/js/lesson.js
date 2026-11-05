@@ -80,7 +80,7 @@ export function buildLesson(ctx) {
     plan.push('listenChoose', 'nextNote', 'tap', 'chordFind', 'sing', 'lyricGap', 'tap');
     for (const type of plan) {
       if (!allowed(type, caps)) continue;
-      if (type === 'lyricGap' && !lyricFor(item.tag, item.part, item.phrase)) continue;
+      if (type === 'lyricGap' && !hasLyricGap(lyricFor(item.tag, item.part, item.phrase))) continue;
       ex.push({ type, ...base });
     }
     // the final "tap" in the new-item block is the memory test: fade cues more
@@ -127,19 +127,50 @@ export function buildLesson(ctx) {
 
 /** Words a part sings in a phrase: from per-note syllables when the tag has
  *  timed lyrics, else a proportional slice of the lyric text. */
-export function sungWords(notes) {
-  let out = '';
+export function sungWords(notes, lyrics = '') {
+  // syllables → words; a trailing "-" joins the next syllable
+  const words = [];
+  let join = false;
   for (const n of notes) {
     const s = n[4];
     if (!s) continue;
-    out += s.endsWith('-') ? s.slice(0, -1) : s + ' ';
+    const syl = s.endsWith('-') ? s.slice(0, -1) : s;
+    if (join && words.length) words[words.length - 1] += syl; else words.push(syl);
+    join = s.endsWith('-');
   }
-  return out.trim();
+  return mendWords(words, lyrics).join(' ');
+}
+
+const bare = w => w.toLowerCase().replace(/[^a-z']/g, '');
+
+/** Repair words split oddly by a score's lyric syllables, using the tag's own
+ *  lyric line as the dictionary: "Ta" + "g" → "Tag", "Taag" → "Tag" (a held
+ *  vowel spelled out), "Ta" + "ag" → "Tag". Only merges into a word the
+ *  lyrics contain, so real pairs ("to old") are never glued together. */
+export function mendWords(words, lyrics = '') {
+  const vocab = new Set((lyrics || '').split(/\s+/).map(bare).filter(Boolean));
+  if (!vocab.size) return words;
+  const known = w => vocab.has(bare(w));
+  const undouble = w => w.replace(/([aeiou])\1/gi, '$1');
+  const fix = w => (known(w) || !known(undouble(w)) ? w : undouble(w));
+  const ws = words.map(fix), out = [];
+  for (let i = 0; i < ws.length; i++) {
+    // longest run of 2–4 unknown pieces that spells a lyric word
+    let done = false;
+    for (let k = Math.min(4, ws.length - i); k >= 2 && !done; k--) {
+      const run = ws.slice(i, i + k);
+      if (run.some(known)) continue;
+      const glued = [run.join(''), undouble(run.join(''))].find(known);
+      if (glued) { out.push(glued); i += k - 1; done = true; }
+    }
+    if (!done) out.push(ws[i]);
+  }
+  return out;
 }
 
 export function lyricFor(tag, part, phrase) {
   const notes = phrase === 'all' ? tag.parts[part] : tag.phrases[part][phrase];
-  const sung = notes ? sungWords(notes) : '';
+  const sung = notes ? sungWords(notes, tag.lyrics) : '';
   if (sung) return sung;
   if (phrase === 'all') return (tag.lyrics || '').trim();
   return phraseLyrics(tag.lyrics, tag.phrases[part], phrase);
@@ -204,6 +235,11 @@ export function listenChooseQuestion(notes, rng) {
   }
   const all = variants.flat();
   return { options: order.map(o => o.v), answerIndex: order.findIndex(o => o.correct), range: [Math.min(...all), Math.max(...all)] };
+}
+
+/** Whether a gap-fill question can be made (a word of 3+ letters to blank). */
+export function hasLyricGap(text) {
+  return !!text && text.split(/\s+/).some(w => w.replace(/[^A-Za-z']/g, '').length >= 3);
 }
 
 /** Lyric gap-fill: blank one word, 3 options. */

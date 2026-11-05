@@ -644,7 +644,7 @@ const RENDER = {
 
   nextNote({ ex, tag, notes, body, finish, cue }) {
     const q = nextNoteQuestion(notes, lesson.rng);
-    if (!q) return finish({ grade: 1 });
+    if (!q) return next();   // a one-note phrase has no "next"
     const shown = notes.slice(0, q.index);
     body.innerHTML = `
       <p class="prompt">What's the next ${ex.part} note?</p>
@@ -712,7 +712,7 @@ const RENDER = {
   lyricGap({ ex, tag, body, finish }) {
     const text = lyricFor(tag, ex.part, ex.phrase);
     const q = text && lyricGapQuestion(text, lesson.rng, WORD_POOL);
-    if (!q) return finish({ grade: 1 });
+    if (!q) return next();   // nothing to ask: skip it (no free XP, no blank screen)
     body.innerHTML = `
       <p class="prompt">Fill in the missing word</p>
       <p class="lyric">${esc(q.before)} <span class="blank">_____</span> ${esc(q.after)}</p>

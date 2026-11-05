@@ -506,7 +506,7 @@ const RENDER = {
 
   nextNote({ tag, notes, body, finish, cue }) {
     const q = nextNoteQuestion(notes, lesson.rng);
-    if (!q) return finish({ grade: 1 });
+    if (!q) return next();   // a one-note chunk has no "next"
     const shown = notes.slice(0, q.index);
     body.innerHTML = `
       <p class="prompt">What's the next note?</p>
