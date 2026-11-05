@@ -327,7 +327,15 @@ function exerciseContext(ex) {
 function cueFor(ex, card) {
   if (ex.type === 'intro' || ex.type === 'guided') return 0;
   if (ex.review) return Math.min(5, card.level + 1);
+  // a new item's memory taps always hide something: first about half the notes, then all but the first
+  if (ex.type === 'tap') return Math.min(5, Math.max(2, card.level) + (ex.cueBoost || 0));
   return Math.min(5, Math.max(1, card.level) + (ex.cueBoost || 0));
+}
+
+/** Exercise heading — for tapping it says how much is shown, so it never claims "from memory" with every note on screen. */
+function labelFor(ex, cue) {
+  if (ex.type === 'tap') return cue <= 1 ? 'Tap it' : cue === 2 ? 'Fill in the gaps' : 'Tap it from memory';
+  return EXERCISE_TYPES[ex.type].label;
 }
 
 function renderExercise() {
@@ -342,7 +350,7 @@ function renderExercise() {
   const needsListen = EXERCISE_TYPES[ex.type].listen;
   app.innerHTML = `<main class="screen lesson">
     <div class="lbar"><button class="icon-btn" data-act="quit" aria-label="Quit">✕</button><div class="prog"><i style="width:${pct}%"></i></div></div>
-    <div class="ex-head"><span class="kind">${EXERCISE_TYPES[ex.type].label.replace('phrase', 'chunk')}</span>
+    <div class="ex-head"><span class="kind">${labelFor(ex, cue).replace('phrase', 'chunk')}</span>
       <span class="muted small">${esc(tag.title)} · ${describeItem(tag, ex.phrase)}${ex.review ? ' · review' : ''}</span></div>
     <div class="ex-body"></div>
     <div class="ex-foot">
