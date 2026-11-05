@@ -118,3 +118,22 @@ test('no gap-fill is planned when there is no word to blank', () => {
   const { exercises } = buildLesson({ tags: [t], cards: {}, today: 10, myPart: 'Lead', canListen: true, canSing: true });
   assert.ok(!exercises.some(e => e.type === 'lyricGap'));
 });
+
+test('chord-find picks a moment where the most parts sing, and skips solo lines', async () => {
+  const { chordAt, chordSize } = await import('../js/lesson.js');
+  // the Lead sings a pickup alone, then all four sing
+  const t = {
+    id: 'p', parts: {
+      Lead: [[52, 1.75, 0.4], [57, 2.2, 1.6], [57, 3.8, 2]],
+      Tenor: [[62, 0, 3.8, 3.8, '', 'r'], [62, 3.8, 2]],
+      Bari: [[54, 3.8, 2]], Bass: [[47, 3.8, 2]],
+    },
+  };
+  for (let seed = 1; seed < 30; seed++) {
+    const q = chordAt(t, 'Lead', t.parts.Lead, makeRng(seed));
+    assert.equal(Object.keys(q.chord).length, 4, 'never the solo pickup');
+    assert.equal(q.answer, 57);
+  }
+  assert.equal(chordSize(t, 'Lead', t.parts.Lead.slice(0, 2)), 1, 'a pickup alone has no chord');
+  assert.equal(chordSize(t, 'Lead', t.parts.Lead), 4);
+});

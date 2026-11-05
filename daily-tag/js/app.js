@@ -732,7 +732,7 @@ const RENDER = {
   switch(ctx) {
     const { ex, tag, notes } = ctx;
     if (caps().canListen) {
-      const ch = chordAt(tag, ex.part, [notes[0]], () => 0);
+      const ch = chordAt(tag, ex.part, notes, () => 0);
       setTimeout(() => audio.playChord(Object.values(ch.chord), 1.4), 200);
     }
     tapExercise(ctx, { guided: false, intro: `Switch! Now you're the <b>${ex.part}</b>${ex.phrase === 'all' ? ' — the whole part' : ''}. Tap it from memory.` });
@@ -825,7 +825,7 @@ function singExercise({ ex, tag, notes, body, finish, cue }) {
     <p class="muted small center status">${speechOn ? 'Speech check on — sing the words.' : 'Sing on any vowel.'}</p>`;
   $('[data-act=pipe]', body).onclick = () => audio.pitchPipe(midis[0]);
   $('[data-act=chord]', body).onclick = () => {
-    const ch = chordAt(tag, ex.part, [notes[0]], () => 0);
+    const ch = chordAt(tag, ex.part, notes, () => 0);
     audio.playChord(Object.values(ch.chord), 1.6, midis[0]);
   };
   let session = null, k = 0, stable = 0, lastM = null, timer = null;

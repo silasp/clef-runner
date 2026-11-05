@@ -81,6 +81,7 @@ export function buildLesson(ctx) {
     for (const type of plan) {
       if (!allowed(type, caps)) continue;
       if (type === 'lyricGap' && !hasLyricGap(lyricFor(item.tag, item.part, item.phrase))) continue;
+      if (type === 'chordFind' && chordSize(item.tag, item.part, itemNotes(item.tag, item.part, item.phrase)) < 3) continue;
       ex.push({ type, ...base });
     }
     // the final "tap" in the new-item block is the memory test: fade cues more
@@ -108,8 +109,9 @@ export function buildLesson(ctx) {
     const { tagId, part, phrase } = parseId(c.id);
     if (!byId[tagId]) continue;
     // strongest test the situation allows: sing if possible, else recall by tapping
-    const pick = c.level >= 2 && allowed('sing', caps) && rng() < 0.6 ? 'sing'
+    let pick = c.level >= 2 && allowed('sing', caps) && rng() < 0.6 ? 'sing'
       : rng() < 0.65 ? 'tap' : reviewTypes[Math.floor(rng() * reviewTypes.length)];
+    if (pick === 'chordFind' && chordSize(byId[tagId], part, itemNotes(byId[tagId], part, phrase)) < 3) pick = 'tap';
     ex.push({ type: pick, tagId, part, phrase, cardId: c.id, review: true });
   }
 
@@ -264,17 +266,37 @@ export function lyricGapQuestion(text, rng, pool = []) {
   return { before: words.slice(0, idx).join(' '), after: words.slice(idx + 1).join(' '), answer: answer.toLowerCase(), options };
 }
 
-/** For chord-find: pick a moment in the phrase and the sounding notes of all parts. */
-export function chordAt(tag, part, notes, rng) {
-  const target = notes[Math.floor(rng() * notes.length)];
-  const t = target[1] + target[2] / 2;
+/** Sounding notes of every part at time t (rests and silences left out). */
+function soundingAt(tag, t) {
   const chord = {};
   for (const p of Object.keys(tag.parts)) {
-    const n = tag.parts[p].find(x => x[1] <= t && x[1] + x[2] >= t);
+    const n = tag.parts[p].find(x => x[1] <= t && x[1] + x[2] >= t && !(typeof x[5] === 'string' && x[5].includes('r')));
     if (n) chord[p] = n[0];
   }
-  chord[part] = target[0];
-  return { time: t, chord, answer: target[0] };
+  return chord;
+}
+
+/** The most parts sounding together at any note of the phrase (1 = a solo line). */
+export function chordSize(tag, part, notes) {
+  let best = 0;
+  for (const n of notes || []) best = Math.max(best, Object.keys({ ...soundingAt(tag, n[1] + n[2] / 2), [part]: 1 }).length);
+  return best;
+}
+
+/** For chord-find: pick a moment in the phrase where the most parts sound
+ *  together (a pickup the part sings alone is no chord to find a note in),
+ *  and the sounding notes of all parts. With rng = () => 0 it's the first
+ *  such moment. */
+export function chordAt(tag, part, notes, rng) {
+  const sized = notes.map(n => {
+    const t = n[1] + n[2] / 2;
+    const chord = { ...soundingAt(tag, t), [part]: n[0] };
+    return { n, t, chord, size: Object.keys(chord).length };
+  });
+  const most = Math.max(...sized.map(x => x.size));
+  const pool = sized.filter(x => x.size === most);
+  const pick = pool[Math.min(pool.length - 1, Math.floor(rng() * pool.length))];
+  return { time: pick.t, chord: pick.chord, answer: pick.n[0] };
 }
 
 export { itemNotes };
