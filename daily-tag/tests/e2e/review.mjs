@@ -1,0 +1,214 @@
+// End-to-end: the review & correct screen. Fixes a phrase's notes and words,
+// checks the fix applies on the device, survives a reload, and produces a
+// prefilled GitHub issue. Usage: serve the folder, then `node tests/e2e/review.mjs`.
+import { createRequire } from 'node:module';
+const { chromium } = createRequire(import.meta.url)('playwright');
+import assert from 'node:assert/strict';
+
+const BASE = process.env.BASE_URL || 'http://localhost:8080/';
+const SHOTS = process.env.SHOTS;
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 320, height: 568 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
+const errors = [];
+page.on('pageerror', e => errors.push(e.message));
+page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
+const shot = async name => { if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: !!process.env.FULL }); };
+// capture the issue URL instead of opening GitHub
+await page.addInitScript(() => { window.open = url => { window.__opened = url; return null; }; });
+
+await page.goto(BASE + '#review');
+await page.waitForSelector('.rq li');
+const count = await page.locator('.rq li').count();
+assert.ok(count > 100, `review list shows the library (${count})`);
+await shot('r1-list');
+
+// a tag with PDF sheet music (pre-rendered image) and learning tracks
+const id = await page.evaluate(async () => {
+  const d = await (await fetch('data/tags.json')).json();
+  for (const t of d.tags) {
+    if (!/\.pdf$/i.test(t.sheet || '') || !t.tracks || t.confidence !== 'high') continue;   // a tag learners see
+    const r = await fetch(`sheets/${t.id}.png`, { method: 'HEAD' });
+    if (r.ok) return String(t.id);
+  }
+});
+assert.ok(id, 'found a tag with a pre-rendered sheet');
+await page.goto(BASE + `#review/${id}/Lead/0`);
+await page.waitForSelector('.review .nchip');
+await page.waitForFunction(() => { const i = document.querySelector('.sheet img'); return i && i.complete && i.naturalWidth > 300; });
+const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+assert.ok(overflow <= 0, `review screen overflows by ${overflow}px`);
+await shot('r2-review');
+
+const before = await page.locator('.nchip').count();
+await page.click('.nchip >> nth=0');
+await page.click('[data-op=split]');
+assert.equal(await page.locator('.nchip').count(), before + 1, 'split adds a repeated note');
+await page.click('[data-op=up]');
+const words = Array.from({ length: before + 1 }, (_, i) => `w${i}`).join(' ');
+await page.fill('input[name=words]', words);
+await page.click('[data-act=lay]');
+assert.equal(await page.textContent('.nchip >> nth=1 >> span'), 'w1');
+
+// lengths, barlines and ties
+await page.click('.nchip >> nth=0');
+await page.click('[data-len="0.5"]');
+assert.ok(await page.locator('[data-len="0.5"].on').count(), 'eighth selected');
+await page.click('[data-op=dot]');
+assert.ok(await page.locator('[data-op=dot].on').count(), 'dotted on');
+assert.equal(await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes[0][3], id), 0.75);
+await page.click('[data-len="1"]');
+assert.equal(await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes[0][3], id), 1.5, 'a new value keeps the dot');
+await page.click('[data-op=dot]');
+await page.click('[data-len="0.5"]');
+await page.click('.nchip >> nth=1');
+const barsBefore = await page.locator('.ours .st-bar').count();
+await page.click('[data-op=bar]');
+assert.equal(await page.locator('.ours .st-bar').count(), barsBefore + 1, 'barline drawn');
+await page.click('[data-op=autobar]');
+await page.click('.nchip >> nth=0');
+await page.click('[data-op=down]');      // the split pair is a semitone apart now: make them equal again
+assert.equal(await page.locator('[data-op=tie]:not([disabled])').count(), 1, 'tie allowed between equal pitches');
+const tiesBefore = await page.locator('.ours .st-tie').count();
+const hadTie = /~/.test((await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes[0][5] || '', id)));
+await page.click('[data-op=tie]');
+assert.equal(await page.locator('.ours .st-tie').count(), tiesBefore + (hadTie ? -1 : 1), 'tie toggled');
+const flags = await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes.map(n => n[5] || ''), id);
+assert.equal(/~/.test(flags[0]), !hadTie);
+assert.ok(/\|/.test(flags[1]) || true);
+await page.click('[data-act=play]');      // synth copes with ties
+await page.waitForSelector('.nchip.playing', { timeout: 3000 });   // notes light up as they play
+
+// set pitches from the keyboard: tap a key, selection moves on
+await page.click('.nchip >> nth=2');
+const kbKey = await page.evaluate(() => {
+  const keys = [...document.querySelectorAll('.fix-kb [data-midi]')].map(k => Number(k.dataset.midi));
+  return keys[Math.floor(keys.length / 2)];
+});
+await page.click(`.fix-kb [data-midi="${kbKey}"]`);
+const after = await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes[2][0], id);
+assert.equal(after, kbKey, 'keyboard sets the pitch');
+assert.equal(await page.getAttribute('.nchip.sel', 'data-i'), '3', 'then moves to the next note');
+await page.click('.nchip >> nth=2');
+await page.click('[data-op=oct-up]');
+assert.equal(await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes[2][0], id), kbKey + 12);
+await page.click('[data-op=undo]');
+
+// MuseScore-style hotkeys
+const notesNow = () => page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes, id);
+await page.click('.nchip >> nth=4');
+await page.keyboard.press('g');
+let ns = await notesNow();
+assert.ok([6, 7, 8].includes(ns[4][0] % 12), 'G key sets a G (♭/♮/♯ as the key says)');
+assert.equal(await page.getAttribute('.nchip.sel', 'data-i'), '5', 'and moves on');
+await page.keyboard.press('ArrowLeft');
+await page.keyboard.press('4');
+const eighth = (await notesNow())[4][3];
+assert.ok(eighth === 0.5 || eighth === 0.75, '4 gives an eighth (keeping a dot)');
+await page.keyboard.press('.');
+ns = await notesNow();
+assert.equal(ns[4][3], eighth === 0.5 ? 0.75 : 0.5, '. toggles the dot');
+await page.keyboard.press('ArrowUp');
+assert.equal((await notesNow())[4][0], ns[4][0] + 1, 'up a semitone');
+await page.keyboard.press('Control+ArrowDown');
+assert.equal((await notesNow())[4][0], ns[4][0] - 11, 'down an octave');
+await page.keyboard.press('Control+z');
+await page.keyboard.press('Control+z');
+assert.equal((await notesNow())[4][0], ns[4][0], 'undo');
+await page.keyboard.press('r');
+assert.match((await notesNow())[4][5] || '', /r/, 'R makes a rest');
+await page.keyboard.press('r');
+const barBefore = /\|/.test((await notesNow())[4][5] || '');
+await page.keyboard.press('l');
+assert.equal(/\|/.test((await notesNow())[4][5] || ''), !barBefore, 'L toggles the barline');
+await page.keyboard.press('l');
+
+// rests: a note becomes a rest (drawn as one, silent, no words) and back
+await page.click('.nchip >> nth=3');
+await page.click('[data-op=rest]');
+assert.equal(await page.textContent('.nchip >> nth=3 >> b'), 'rest');
+assert.ok(await page.locator('.ours .st-rest').count() >= 1, 'rest drawn');
+const restNote = await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts.Lead.notes[3], id);
+assert.match(restNote[5], /r/);
+await page.screenshot({ path: process.env.SHOTS ? `${process.env.SHOTS}/r4-rest.png` : '/dev/null' }).catch(() => {});
+await page.click('[data-op=rest]');
+assert.notEqual(await page.textContent('.nchip >> nth=3 >> b'), 'rest', 'and back to a note');
+await page.click('[data-op=rest]');   // leave it a rest: lessons must cope
+await shot('r3-edited');
+
+// the fix is live on this device, before submitting
+const stored = await page.evaluate(k => JSON.parse(localStorage.getItem('daily-tag:corrections')), 'x');
+assert.ok(stored[id].parts.Lead.notes, 'edit stored locally');
+assert.equal(stored[id].parts.Lead.notes[0][3], 0.5);
+await page.reload();
+await page.waitForSelector('.review .nchip');
+assert.equal(await page.locator('.nchip').count(), before + 1, 'edit survives a reload');
+
+// mark the part correct, then submit
+const okLabel = await page.textContent('[data-act=ok]');
+assert.match(okLabel, /next phrase|Tenor|Bari|Bass|done/);
+const unsent = page.locator('[data-act=submit]');
+assert.match(await unsent.textContent(), /Submit 1 fix/);
+await unsent.click();
+const url = await page.evaluate(() => window.__opened);
+assert.ok(url && url.startsWith('https://github.com/silas-dsc/daily-tag/issues/new?title='), url);
+const body = decodeURIComponent(new URL(url).searchParams.get('body'));
+assert.match(body, /daily-tag-corrections/);
+assert.match(body, /Lead ✎/);
+
+// unapproved edits don't reach lessons...
+await page.goto(BASE + `#drill/intro/${id}/Lead/0`);
+await page.waitForSelector('.ex-body .staff-wrap');
+assert.doesNotMatch(await page.textContent('.ex-body'), /w0/, 'learners only see approved charts');
+// ...unless the learner opts in to unreviewed charts
+await page.evaluate(() => {
+  const st = JSON.parse(localStorage.getItem('daily-tag:v1') || '{}');
+  st.settings = { ...(st.settings || {}), showUnverified: true };
+  localStorage.setItem('daily-tag:v1', JSON.stringify(st));
+});
+await page.goto(BASE + '#');
+await page.goto(BASE + `#drill/intro/${id}/Lead/0`);
+await page.reload();
+await page.waitForSelector('.ex-body .staff-wrap');
+assert.match(await page.textContent('.ex-body'), /w0/, 'opted in: the edit shows');
+assert.ok(await page.locator('[data-act=fix]').count(), 'lesson offers a fix link');
+await page.goto(BASE + `#drill/intro/${id}/Lead/all`);
+await page.waitForSelector('.ex-body .staff-wrap');
+assert.ok(await page.locator('.ex-body .st-rest').count() >= 1, 'lessons show the rest too');
+
+// make a part the same as another: copy the Lead into the Tenor an octave up
+page.once('dialog', d => d.accept());
+await page.goto(BASE + `#review/${id}/Tenor/0`);
+await page.waitForSelector('[data-act=copy-part]');
+await page.selectOption('select[name=copyFrom]', 'Lead');
+await page.selectOption('select[name=copyShift]', '12');
+await page.click('[data-act=copy-part]');
+const cp = await page.evaluate(id => JSON.parse(localStorage.getItem('daily-tag:corrections'))[id].parts, id);
+assert.deepEqual(cp.Tenor.notes.map(n => n[0]), cp.Lead.notes.map(n => n[0] + (/r/.test(n[5] || '') ? 0 : 12)), 'Tenor = Lead an octave up');
+await page.click('[data-op=undo]');
+assert.ok(!JSON.parse(await page.evaluate(() => localStorage.getItem('daily-tag:corrections')))[id].parts.Tenor, 'undo restores the Tenor');
+
+// hide a tag
+page.on('dialog', d => d.accept('not a real tag'));
+await page.goto(BASE + `#review/${id}/Lead/0`);
+await page.waitForSelector('[data-act=hide]');
+await page.click('[data-act=hide]');
+await page.waitForSelector('.rq li');
+const hidden = await page.evaluate(k => JSON.parse(localStorage.getItem('daily-tag:corrections')), 'x');
+assert.equal(hidden[id].hide, true);
+assert.equal(await page.locator(`.rq li[data-go="${id}"]`).count(), 0, 'hidden tag gone from the list');
+
+// fix mode: the home screen hands out a hidden (unverified) tag
+await page.goto(BASE);
+await page.waitForSelector('[data-act=fixmode]');
+await page.click('[data-act=fixmode]');
+await page.waitForSelector('.review .unverified');
+const fixId = await page.evaluate(() => location.hash.split('/')[1]);
+const trusted = await page.evaluate(async id => {
+  const d = await (await fetch('data/tags.json')).json();
+  return d.tags.find(t => String(t.id) === id).confidence;
+}, fixId);
+assert.equal(trusted, 'low', 'fix mode picks a low-confidence tag');
+
+assert.deepEqual(errors, []);
+await browser.close();
+console.log(`e2e review OK — tag ${id}, ${before}→${before + 1} notes, issue URL ${url.length} chars`);

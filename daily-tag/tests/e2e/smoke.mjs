@@ -1,0 +1,88 @@
+// End-to-end smoke test: loads the app on an iPhone SE-sized viewport and
+// completes a full lesson in "silent" mode (no listening, no singing).
+// Usage: serve the folder (npm run serve) then `npm run test:e2e`.
+// Env: BASE_URL (default http://localhost:8080/), SHOTS=dir to save screenshots.
+import { createRequire } from 'node:module';
+// works with a local devDependency or a globally installed playwright
+const { chromium } = createRequire(import.meta.url)('playwright');
+import assert from 'node:assert/strict';
+
+const BASE = process.env.BASE_URL || 'http://localhost:8080/';
+const SHOTS = process.env.SHOTS;
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 320, height: 568 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
+const errors = [];
+page.on('pageerror', e => errors.push(e.message));
+page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+const shot = async name => { if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: false }); };
+
+await page.goto(BASE);
+await page.waitForSelector('.today-card');
+await shot('01-home');
+
+// no horizontal overflow at 320px
+const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+assert.ok(overflow <= 0, `page overflows horizontally by ${overflow}px`);
+
+// "I already know this part": today's item moves on; the tag page offers undo
+const firstTitle = await page.textContent('.today-title');
+await page.click('[data-act=know]');
+await page.waitForFunction(t => document.querySelector('.today-title').textContent !== t, firstTitle);
+await page.click('.path li');
+await page.waitForSelector('[data-unknow]');
+await page.click('[data-unknow]');
+await page.waitForSelector('.tagpage [data-know]');
+await page.click('.back');
+await page.waitForSelector('.today-card');
+assert.equal(await page.textContent('.today-title'), firstTitle, 'undo puts it back on the path');
+
+// go silent: can't listen + can't sing
+await page.click('[data-act=toggle-listen]');
+await page.click('[data-act=toggle-sing]');
+assert.match(await page.textContent('[data-act=toggle-listen]'), /Silent/);
+
+await page.click('[data-act=start]');
+await page.waitForSelector('.ex-body');
+const kinds = [];
+for (let step = 0; step < 15; step++) {
+  if (await page.$('.results')) break;
+  const kind = (await page.textContent('.kind')).trim();
+  kinds.push(kind);
+  if (step === 1) await shot('02-exercise');
+  if (await page.$('[data-act=got]')) {
+    await page.click('[data-act=got]');
+  } else if (await page.$('.kb')) {
+    // answer tap exercises by reading the target notes from the app state is not
+    // possible from outside, so use the hint button to reveal + tap each note
+    for (let k = 0; k < 60 && !(await page.isVisible('.feedback')); k++) {
+      const hinted = await page.$('.kb .hint');
+      if (hinted) { await hinted.dispatchEvent('pointerdown'); continue; }
+      const hintBtn = await page.$('[data-act=hint]');
+      if (hintBtn) await hintBtn.click(); else break;
+    }
+  } else if (await page.$('.opt')) {
+    await page.click('.opt');
+  }
+  if (!(await page.isVisible('.feedback'))) await page.click('[data-act=skip]');
+  else { if (step === 2) await shot('03-feedback'); await page.click('[data-act=next]'); }
+}
+await page.waitForSelector('.results', { timeout: 5000 });
+await shot('04-results');
+const xp = await page.textContent('.res-grid b');
+assert.match(xp, /\+\d+/);
+for (const k of kinds) assert.ok(!/heard|chord|Sing it/i.test(k), `silent mode showed "${k}"`);
+
+// progress persisted
+const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('daily-tag:v1')));
+assert.ok(stored.lessons >= 1 && Object.keys(stored.cards).length >= 1);
+
+// tag page + settings render
+await page.click('[data-act=home]');
+await page.click('.path li');
+await page.waitForSelector('.tagpage');
+await shot('05-tag');
+await page.goto(BASE + '#settings');
+await page.waitForSelector('.settings');
+assert.deepEqual(errors, [], 'console errors: ' + errors.join('\n'));
+console.log('e2e smoke OK — exercises:', kinds.join(' | '));
+await browser.close();

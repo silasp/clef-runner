@@ -1,0 +1,590 @@
+// Review & correct: our transcription, the sheet music and the real
+// recording side by side, with quick fixes for notes and lyrics.
+// Edits apply on this device at once; "Submit" opens a prefilled GitHub
+// issue that the repo's apply-corrections workflow merges.
+
+import { PARTS, noteName, letterToMidi } from './music.js';
+import { splitPhrases } from './curriculum.js';
+import * as C from './corrections.js';
+import * as audio from './audio.js';
+import { rhythmGlyph } from './notation.js';
+import { mountKeyboard, rangeFor } from './keyboard.js';
+
+const LENGTHS = [[0.25, 'sixteenth'], [0.5, 'eighth'], [1, 'quarter'], [2, 'half'], [4, 'whole']];
+
+/** Split a length in beats into its plain value and whether it is dotted. */
+export function lengthParts(beats) {
+  const b = Number(beats) || 0;
+  for (const [base] of LENGTHS) {
+    if (Math.abs(b - base) < 0.01) return { base, dotted: false };
+    if (Math.abs(b - base * 1.5) < 0.01) return { base, dotted: true };
+  }
+  return { base: null, dotted: false };
+}
+
+const REST_ICON = '<svg viewBox="0 0 14 30" width="10" height="22" aria-hidden="true" class="len-ico"><path d="M5 3 l5 7 l-5 6 l5 6 q-7 -2 -4 6" class="fl"/></svg>';
+
+/** A small note-value icon (head, stem, flags, dot). */
+function lengthIcon(beats) {
+  const g = rhythmGlyph(beats);
+  let s = `<svg viewBox="0 0 22 30" width="18" height="26" aria-hidden="true" class="len-ico">`;
+  s += `<ellipse cx="8" cy="23" rx="5" ry="3.7" transform="rotate(-20 8 23)" class="${g.hollow ? 'h' : 'f'}"/>`;
+  if (g.stem) s += `<line x1="12.6" x2="12.6" y1="22" y2="3"/>`;
+  for (let f = 0; f < g.flags; f++) s += `<path d="M12.6 ${3 + f * 5} q 6 5 4 11" class="fl"/>`;
+  if (g.dot) s += `<circle cx="18" cy="23" r="1.7" class="f"/>`;
+  return s + '</svg>';
+}
+
+let env = null;      // { app, esc, toast, topBar, staffHtml, raw(id), tag(id), tags(), store(), remote(), save(), rank(id) }
+let view = null;     // current review session
+
+let back = null;     // hash to return to (a lesson or a tag page), or null for the review list
+
+export function initReview(e) {
+  env = e;
+  if (typeof document !== 'undefined') document.addEventListener('keydown', onHotkey);
+}
+
+/**
+ * MuseScore-style shortcuts on the correction screen:
+ *   3–7 length (16th, 8th, quarter, half, whole) · . dot · A–G pitch (in the key,
+ *   nearest the previous note; then the next note is selected) · ↑/↓ semitone ·
+ *   Ctrl/⌘+↑/↓ octave · ←/→ select · T tie · R or 0 rest · L barline ·
+ *   Delete remove · Ctrl/⌘+Z undo · Space play/stop ours
+ */
+function onHotkey(e) {
+  if (!view || !env || !location.hash.startsWith('#review/')) return;
+  if (e.target && e.target.closest && e.target.closest('input, select, textarea')) return;
+  if (e.altKey) return;
+  const app = env.app;
+  const click = sel => { const b = app.querySelector(sel); if (b && !b.disabled) b.click(); return !!b; };
+  const mod = e.metaKey || e.ctrlKey;
+  const k = e.key;
+  let done = true;
+  if (mod) {
+    if (k === 'z' || k === 'Z') click('[data-op=undo]');
+    else if (k === 'ArrowUp') click('[data-op=oct-up]');
+    else if (k === 'ArrowDown') click('[data-op=oct-down]');
+    else done = false;
+  } else if ({ 3: 0.25, 4: 0.5, 5: 1, 6: 2, 7: 4 }[k]) click(`[data-len="${{ 3: 0.25, 4: 0.5, 5: 1, 6: 2, 7: 4 }[k]}"]`);
+  else if (k === '.') click('[data-op=dot]');
+  else if (/^[a-g]$/i.test(k) && !e.shiftKey) pitchFromLetter(k);
+  else if (k === 'ArrowUp') click('[data-op=up]');
+  else if (k === 'ArrowDown') click('[data-op=down]');
+  else if (k === 'ArrowLeft' || k === 'ArrowRight') {
+    view.sel = Math.max(view.range[0], Math.min(view.range[1] - 1, view.sel + (k === 'ArrowLeft' ? -1 : 1)));
+    render();
+  } else if (k === 't' || k === 'T') click('[data-op=tie]');
+  else if (k === 'r' || k === 'R' || k === '0') click('[data-op=rest]');
+  else if (k === 'l' || k === 'L' || k === '|') click('[data-op=bar]');
+  else if (k === 'Delete' || k === 'Backspace') click('[data-op=delete]');
+  else if (k === ' ') { if (app.querySelector('.nchip.playing')) { audio.stopAll(); highlight(-1); } else click('[data-act=play]'); }
+  else if (k === 'Escape') { audio.stopAll(); highlight(-1); }
+  else done = false;
+  if (done) e.preventDefault();
+}
+
+/** Letter key: that note of the key, in the octave nearest the previous sung note. */
+function pitchFromLetter(letter) {
+  const tag = env.tag(view.id);
+  const i = view.sel;
+  let ref = null;
+  for (let k = i - 1; k >= 0 && ref == null; k--) if (!C.isRest(view.notes[k])) ref = view.notes[k][0];
+  if (ref == null) ref = view.notes[i][0];
+  const m = letterToMidi(letter, tag.tonic, ref);
+  audio.unlock(); audio.stopAll(); audio.playNote(m, 0.45);
+  edit(n => C.setPitch(n, i, m), { keepSel: true, then: () => { view.sel = Math.min(i + 1, view.range[1] - 1); } });
+}
+export function setReviewBack(h) { back = h; }
+const backHash = () => back || 'review';
+
+const $ = (s, el = document) => el.querySelector(s);
+
+/** Sheet image URL: PDFs are pre-rendered into sheets/<id>.png. */
+export function sheetImage(tag) {
+  if (!tag.sheet) return null;
+  return /\.pdf$/i.test(tag.sheet) ? `sheets/${tag.id}.png` : tag.sheet;
+}
+
+function ranges(notes) {
+  const out = [];
+  let i = 0;
+  for (const ph of splitPhrases(notes)) { out.push([i, i + ph.length]); i += ph.length; }
+  return out;
+}
+
+function partNotes(id, part) {
+  const t = env.tag(id);
+  return t ? (t.written || t.parts)[part].map(n => [...n]) : [];
+}
+
+function entryFor(id) { return env.store()[id]; }
+
+function partBadge(id, part) {
+  const t = env.tag(id);
+  const e = entryFor(id);
+  const pe = e && e.parts && e.parts[part];
+  if (pe && pe.notes) return '✎';
+  if ((pe && pe.ok) || (t && t.checked && t.checked[part])) return '✓';
+  return '';
+}
+
+// ---------------------------------------------------------------- queue
+export function showReviewQueue() {
+  const { app, esc } = env;
+  const store = env.store();
+  const pend = C.pending(store, env.remote());
+  const tags = env.tags();
+  const started = id => env.startedTags().includes(id);
+  const sorted = [...tags].sort((a, b) => (started(b.id) - started(a.id)) || (a.rank - b.rank));
+  const status = t => {
+    const checked = PARTS.filter(p => partBadge(t.id, p)).length;
+    return checked === 4 ? 'done' : checked ? 'part' : 'todo';
+  };
+  const nextTodo = sorted.find(t => status(t) !== 'done');
+  const reviewer = env.reviewer();
+  const waiting = reviewer ? tags.filter(t => t.awaiting) : [];
+  app.innerHTML = `${env.topBar()}
+  <main class="screen review-queue">
+    <a href="#" class="back">‹ Path</a>
+    <h1>Check the tags</h1>
+    <p class="muted small">Compare our notes and words with the sheet music and the real singer, fix anything wrong, then submit. Fixes work on this phone straight away; submitting puts them in the library for everyone.</p>
+    <div class="btns">
+      ${nextTodo ? `<button class="primary" data-go="${nextTodo.id}">Check next: ${esc(nextTodo.title)}</button>` : ''}
+      ${submitButton(pend.length)}
+    </div>
+    ${waiting.length ? `<h2>Awaiting your review (${waiting.length})</h2>
+    <ul class="rq">${waiting.map(t => `<li data-go="${t.id}" class="todo"><span class="rq-t">${esc(t.title)}</span><span class="rq-s"></span>
+      <span class="muted small">${t.live ? 'learners see the previous version' : 'hidden from learners'}</span></li>`).join('')}</ul>
+    <h2>All tags</h2>` : ''}
+    <ul class="rq">${sorted.map(t => {
+      const st = status(t);
+      return `<li data-go="${t.id}" class="${st}"><span class="rq-t">${esc(t.title)}</span>
+        <span class="rq-s">${PARTS.map(p => `<i title="${p}">${partBadge(t.id, p) || '·'}</i>`).join('')}</span>
+        <span class="muted small">${t.live ? (t.source === 'verified' ? '✓ sheet' : t.source) : '🔧 hidden'}${t.awaiting ? ' · fix awaiting review' : ''}${pend.includes(t.id) ? ' · unsent' : ''}</span></li>`;
+    }).join('')}</ul>
+  </main>`;
+  app.querySelectorAll('[data-go]').forEach(el => el.onclick = () => { location.hash = `review/${el.dataset.go}`; });
+  bindSubmit(app);
+}
+
+function submitButton(n) {
+  return n ? `<button class="sm submit" data-act="submit">Submit ${n} fix${n > 1 ? 'es' : ''} ↗</button>` : '';
+}
+
+function bindSubmit(root) {
+  const b = root.querySelector('[data-act=submit]');
+  if (b) b.onclick = () => submit();
+  const ap = root.querySelector('[data-act=approve]');
+  if (ap) ap.onclick = () => {
+    const id = ap.dataset.id;
+    const version = C.versionOf(id, env.remote());
+    const a = C.buildApproval({ [id]: version }, { [id]: env.raw(id) });
+    window.open(a.url, '_blank', 'noopener');
+    env.toast('Opened on GitHub — press “Submit new issue” to approve');
+  };
+}
+
+/** The maintainer's approval panel: approve exactly the version in the repo. */
+function approveBox(tag) {
+  const unsent = C.pending(env.store(), env.remote()).includes(tag.id);
+  const a = env.approved()[tag.id];
+  const current = C.versionOf(tag.id, env.remote());
+  const state = a && a.version === current ? `✅ Approved ${a.at}${a.hide ? ' (hidden)' : ''}` : a ? 'Approved earlier — changed since' : 'Not approved yet';
+  return `<div class="approve-box"><span>${state}</span>
+    ${a && a.version === current ? '' : unsent
+      ? '<span class="muted small">Submit your own edits first; approve once they have merged.</span>'
+      : `<button class="sm primary" data-act="approve" data-id="${tag.id}">✅ Approve for learners</button>`}</div>`;
+}
+
+/** Open the prefilled GitHub issue for everything unsent. */
+export function submit() {
+  const store = env.store();
+  const ids = C.pending(store, env.remote());
+  if (!ids.length) { env.toast('Nothing to submit'); return; }
+  const orig = Object.fromEntries(ids.map(id => [id, env.raw(id)]).filter(([, t]) => t));
+  const sub = C.buildSubmission(store, ids, orig);
+  if (sub.fits) {
+    window.open(sub.url, '_blank', 'noopener');
+  } else {
+    // too long for a link: copy the text, open a blank issue to paste it into
+    // (both inside the tap, or iOS blocks them)
+    const copied = navigator.clipboard ? navigator.clipboard.writeText(sub.body) : Promise.reject(new Error('no clipboard'));
+    window.open(sub.shortUrl, '_blank', 'noopener');
+    copied.then(() => env.toast('Too long for a link: the details are copied — paste them as the issue text'))
+      .catch(() => window.prompt('Copy this, then paste it as the issue text:', sub.body));
+  }
+  for (const id of ids) store[id].submitted = true;
+  env.save();
+  env.toast('Opened on GitHub — press “Submit new issue”. Your fix reaches learners once it’s reviewed.');
+  if (location.hash === '#review') showReviewQueue();
+}
+
+// ---------------------------------------------------------------- review screen
+/** #review/<id>[/<Part>[/<phrase>]] — always the whole part; <phrase> preselects its first note. */
+export function showReview(args) {
+  const [id, partArg, phraseArg] = args.split('/');
+  const tag = env.tag(id);
+  if (!tag) {
+    env.toast('That tag is hidden or missing');
+    location.hash = 'review';
+    return;
+  }
+  const part = PARTS.includes(partArg) ? partArg : (view && view.id === id ? view.part : 'Lead');
+  const fresh = !view || view.id !== id || view.part !== part;
+  if (fresh) {
+    const notes = partNotes(id, part);
+    view = { id, part, notes, saved: JSON.stringify(notes), undo: [], sel: 0, whole: true, range: null };
+    // coming from a lesson phrase: start on that phrase's first note
+    if (phraseArg != null && phraseArg !== '' && phraseArg !== 'all') {
+      const r = ranges(notes)[Math.max(0, Number(phraseArg) || 0)];
+      if (r) view.sel = r[0];
+    }
+  }
+  view.range = [0, view.notes.length];
+  render();
+}
+
+function slice() { return view.notes.slice(view.range[0], view.range[1]); }
+
+function render() {
+  const { app, esc } = env;
+  const tag = env.tag(view.id);
+  const [from, to] = view.range;
+  const notes = slice();
+  const img = sheetImage(tag);
+  const dirty = JSON.stringify(view.notes) !== view.saved;
+  const nextPart = PARTS[PARTS.indexOf(view.part) + 1];
+  const pend = C.pending(env.store(), env.remote()).length;
+  const sel = Math.min(Math.max(view.sel, from), to - 1);
+  view.sel = sel;
+  const selNote = view.notes[sel];
+  const sourceLabel = { score: "✓ from the arranger's score", verified: '✓ recordings + sheet agree', audio: 'from the recordings', sheet: 'read from the sheet music' }[tag.source] || tag.source;
+
+  app.innerHTML = `
+  <main class="screen review">
+    <div class="rv-top">
+      <a href="#${backHash()}" class="back">‹ ${back === 'lesson' ? 'Back to the lesson' : back ? 'Back' : 'All tags'}</a>
+      ${submitButton(pend)}
+    </div>
+    <h1>${esc(tag.title)}</h1>
+    ${!tag.live ? `<div class="unverified">🔧 <b>Hidden from learners</b> until it's checked and approved. Compare every part with the sheet music and the real singer, fix what's wrong, press ✓ for each part, then Submit.</div>`
+      : tag.awaiting ? `<div class="unverified">✎ This chart has a fix awaiting review — learners still see the previous version.</div>` : ''}
+    ${env.reviewer() ? approveBox(tag) : ''}
+    <div class="muted small">#${tag.rank} · our notes ${sourceLabel}${tag.corrected ? ' · corrected' : ''}</div>
+    <div class="tabs" role="tablist">${PARTS.map(p => `<button role="tab" class="tab ${p === view.part ? 'on' : ''}" data-part="${p}">${p} <b>${partBadge(view.id, p)}</b></button>`).join('')}</div>
+
+    <div class="rv-grid">
+      <section class="panel ours">
+        <h2>Ours</h2>
+        <div class="staff-wrap">${staffFor(tag, notes, sel - from)}</div>
+        <div class="btns center">
+          <button class="sm" data-act="play">▶ Ours</button>
+          ${tag.tracks && tag.tracks[view.part] ? `<button class="sm" data-act="real">🎙 Real</button>
+          <button class="sm" data-act="both">▶ Both</button>
+          <button class="sm" data-act="real-all">🎙 Whole track</button>` : ''}
+        </div>
+      </section>
+
+      <section class="panel sheet">
+        <h2>Sheet music</h2>
+        ${img ? `<div class="sheet-box"><img src="${esc(img)}" alt="Sheet music for ${esc(tag.title)}" loading="lazy" referrerpolicy="no-referrer"></div>
+        <p class="muted small center"><a href="${esc(tag.sheet)}" target="_blank" rel="noopener">Open full size ↗</a></p>`
+        : '<p class="muted">No sheet music for this tag.</p>'}
+      </section>
+
+      <section class="panel fix">
+        <h2>Fix</h2>
+        <div class="chips">${notes.map((n, k) => {
+          const i = from + k;
+          return `<button class="nchip ${i === sel ? 'sel' : ''}" data-i="${i}">${C.isRest(n) ? `<b class="rest">rest</b><span></span>` : `<b>${noteName(n[0], tag.tonic)}</b><span>${esc(n[4] || (k ? '–' : ''))}</span>`}</button>`;
+        }).join('')}</div>
+        <div class="edit-bar" aria-label="Edit the selected note">
+          <button class="sm" data-op="down" title="Semitone down">▼</button>
+          <button class="sm" data-op="up" title="Semitone up">▲</button>
+          <button class="sm" data-op="split" title="Split into two repeated notes">✂ Split</button>
+          <button class="sm" data-op="merge" title="Merge with the next note" ${sel < view.notes.length - 1 ? '' : 'disabled'}>⊕ Merge</button>
+          <button class="sm ${C.isRest(selNote) ? 'on' : ''}" data-op="rest" title="${C.isRest(selNote) ? 'Turn this rest back into a note' : 'Turn this note into a rest'}" ${C.isRest(selNote) || view.notes.filter(n => !C.isRest(n)).length > 2 ? '' : 'disabled'}>${C.isRest(selNote) ? `${lengthIcon(1)} Make note` : `${REST_ICON} Make rest`}</button>
+          <button class="sm" data-op="delete" title="Delete note" ${view.notes.length > 1 ? '' : 'disabled'}>🗑</button>
+          <button class="sm" data-op="undo" ${view.undo.length ? '' : 'disabled'}>↶ Undo</button>
+        </div>
+        <div class="pitch-row">
+          <span class="muted small">${C.isRest(selNote) ? 'Tap a key to turn this rest into a note' : `Tap a key to set <b>${noteName(selNote[0], tag.tonic)}</b>'s pitch`}</span>
+          <label class="check small"><input type="checkbox" name="advance" ${view.advance === false ? '' : 'checked'}> then next note</label>
+        </div>
+        <div class="kb-host fix-kb"></div>
+        <div class="edit-bar">
+          <button class="sm" data-op="oct-down" title="Octave down">8va ▼</button>
+          <button class="sm" data-op="oct-up" title="Octave up">8va ▲</button>
+        </div>
+        <div class="len-bar" role="group" aria-label="Length of the selected note">
+          ${(() => {
+            const { base, dotted } = lengthParts(selNote[3]);
+            return LENGTHS.map(([b, name]) => `<button class="sm len ${base === b ? 'on' : ''}" data-len="${b}" title="${name}" aria-label="${name}">${lengthIcon(b)}</button>`).join('')
+              + `<button class="sm len dot ${dotted ? 'on' : ''}" data-op="dot" title="Dotted (half as long again)" aria-label="Dotted" aria-pressed="${dotted}" ${base ? '' : 'disabled'}>dot&nbsp;•</button>`;
+          })()}
+        </div>
+        <div class="edit-bar" role="group" aria-label="Barlines and ties">
+          <button class="sm ${C.hasFlag(selNote, '|') ? 'on' : ''}" data-op="bar" ${sel > 0 ? '' : 'disabled'} title="Barline before this note">┃ Bar before</button>
+          <button class="sm ${C.hasFlag(selNote, '~') ? 'on' : ''}" data-op="tie" ${view.notes[sel + 1] && view.notes[sel + 1][0] === selNote[0] ? '' : 'disabled'} title="Tie to the next note (same pitch, held — not sung again)">⁀ Tie to next</button>
+        </div>
+        <p class="muted small kbd-help">Keyboard: <kbd>A</kbd>–<kbd>G</kbd> pitch · <kbd>3</kbd>–<kbd>7</kbd> length · <kbd>.</kbd> dot · <kbd>↑</kbd><kbd>↓</kbd> semitone (<kbd>Ctrl</kbd> octave) · <kbd>←</kbd><kbd>→</kbd> select · <kbd>T</kbd> tie · <kbd>R</kbd> rest · <kbd>L</kbd> barline · <kbd>Del</kbd> delete · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Space</kbd> play</p>
+        <div class="edit-bar autobar">
+          <button class="sm" data-op="autobar" title="Treat the selected note as a downbeat and place barlines every bar from here">Bars from here, every</button>
+          <select name="perBar" aria-label="Beats per bar">${[2, 3, 4, 6].map(b => `<option value="${b}" ${b === (view.perBar || 4) ? 'selected' : ''}>${b} beats</option>`).join('')}</select>
+        </div>
+        <div class="copy-part">
+          <span class="small"><b>Same as</b></span>
+          <select name="copyFrom" aria-label="Part to copy">${PARTS.filter(p => p !== view.part).map(p => `<option ${p === view.copyFrom ? 'selected' : ''}>${p}</option>`).join('')}</select>
+          <select name="copyShift" aria-label="Octave">${[[0, 'same pitch'], [12, 'octave up'], [-12, 'octave down']].map(([v, l]) => `<option value="${v}" ${v === (view.copyShift || 0) ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          <span class="btns">
+            <button class="sm" data-act="copy-part">Copy whole part</button>
+          </span>
+        </div>
+        <label class="syl">Syllable on ${noteName(selNote[0], tag.tonic)}
+          <input name="syl" value="${esc(selNote[4] || '')}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="(held from before)">
+        </label>
+        <label class="syl">Words for these notes
+          <span class="row"><input name="words" value="${esc(C.lyricText(view.notes, from, to))}" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button class="sm" data-act="lay">Apply</button></span>
+          <span class="muted small">One word per note. Split words with “-” (lo-ving). “_” holds the previous syllable over a note.</span>
+        </label>
+        ${tag.lyrics ? `<p class="muted small">Tag lyrics: “${esc(tag.lyrics.replace(/\s+/g, ' ').trim())}”</p>` : ''}
+      </section>
+    </div>
+
+    <div class="btns rv-actions">
+      ${dirty ? '<button data-act="revert">Discard my edits</button>' : ''}
+      <button class="primary go" data-act="ok">${dirty ? 'Save' : '✓ Correct'}${back === 'lesson' ? ' → back to lesson' : nextPart ? ` → ${nextPart}` : ' → done'}</button>
+    </div>
+    <p class="center"><button class="link danger" data-act="hide">🚩 This tag is too wrong to fix — hide it</button></p>
+  </main>`;
+  bind();
+  refit();
+  const imgEl = $('.sheet img', app);
+  if (imgEl) imgEl.onerror = () => { imgEl.closest('.sheet-box').outerHTML = '<p class="muted">Couldn’t load a preview.</p>'; };
+  if (tag.tracks && tag.tracks[view.part]) audio.preloadTrack(tag.tracks[view.part]);
+}
+
+function edit(fn, { keepSel = false, then = null } = {}) {
+  view.undo.push({ notes: view.notes, range: [...view.range], sel: view.sel });
+  if (view.undo.length > 50) view.undo.shift();
+  const before = view.notes.length;
+  view.notes = fn(view.notes);
+  view.range = [view.range[0], view.range[1] + view.notes.length - before];
+  if (!keepSel) view.sel = Math.min(view.sel, view.range[1] - 1);
+  if (then) then();
+  persistEdit();
+  render();
+}
+
+/** Keep the edit applied on this device (unsent until Submit). */
+/** The part as the repo has it (generated notes plus the repo's corrections). */
+function baseNotes() {
+  const r = env.remote()[view.id];
+  const rn = r && !r.hide && r.parts && r.parts[view.part] && r.parts[view.part].notes;
+  return rn || env.raw(view.id).parts[view.part];
+}
+
+function persistEdit() {
+  const store = env.store();
+  const original = baseNotes();
+  if (C.sameNotes(view.notes, original)) {
+    const pe = store[view.id] && store[view.id].parts[view.part];
+    if (pe) { delete pe.notes; if (!pe.ok) C.forget(store, view.id, view.part); }
+  } else {
+    const ok = !!(store[view.id] && store[view.id].parts[view.part] && store[view.id].parts[view.part].ok);
+    C.recordPart(store, view.id, view.part, { notes: view.notes, ok });
+  }
+  env.save({ rebuild: true });
+}
+
+function bind() {
+  const { app } = env;
+  const tag = env.tag(view.id);
+  bindSubmit(app);
+  const go = (phrase, part = view.part) => { location.hash = `review/${view.id}/${part}/${phrase}`; };
+  app.querySelectorAll('[data-part]').forEach(b => b.onclick = () => go(0, b.dataset.part));
+  app.querySelectorAll('.nchip').forEach(b => b.onclick = () => {
+    view.sel = Number(b.dataset.i);
+    audio.unlock(); audio.stopAll(); audio.playNote(view.notes[view.sel][0], 0.5);
+    render();
+  });
+  const sound = () => { audio.unlock(); audio.stopAll(); audio.playNote(view.notes[view.sel][0], 0.45); };
+  app.querySelectorAll('[data-op]').forEach(b => b.onclick = () => {
+    const i = view.sel;
+    switch (b.dataset.op) {
+      case 'up': edit(n => C.transpose(n, i, 1), { keepSel: true }); sound(); break;
+      case 'down': edit(n => C.transpose(n, i, -1), { keepSel: true }); sound(); break;
+      case 'oct-up': edit(n => C.transpose(n, i, 12), { keepSel: true }); sound(); break;
+      case 'oct-down': edit(n => C.transpose(n, i, -12), { keepSel: true }); sound(); break;
+      case 'split': edit(n => C.splitNote(n, i), { keepSel: true }); break;
+      case 'merge': edit(n => C.mergeNext(n, i), { keepSel: true }); break;
+      case 'delete': edit(n => C.deleteNote(n, i)); break;
+      case 'bar': edit(n => C.toggleFlag(n, i, '|'), { keepSel: true }); break;
+      case 'tie': edit(n => C.toggleFlag(n, i, '~'), { keepSel: true }); break;
+      case 'rest': edit(n => C.toggleRest(n, i), { keepSel: true }); if (!C.isRest(view.notes[i])) sound(); break;
+      case 'dot': {
+        const { base, dotted } = lengthParts(view.notes[i][3]);
+        if (base) edit(n => C.setBeats(n, i, dotted ? base : base * 1.5), { keepSel: true });
+        break;
+      }
+      case 'autobar': edit(n => C.autoBars(n, i, view.perBar || 4), { keepSel: true }); break;
+      case 'undo': {
+        const u = view.undo.pop();
+        if (u) { view.notes = u.notes; view.range = u.range; view.sel = u.sel; persistEdit(); render(); }
+        break;
+      }
+    }
+  });
+  // plain value buttons keep the dot if the note is dotted; the dot button toggles it
+  app.querySelectorAll('[data-len]').forEach(b => b.onclick = () => {
+    const { dotted } = lengthParts(view.notes[view.sel][3]);
+    edit(n => C.setBeats(n, view.sel, Number(b.dataset.len) * (dotted ? 1.5 : 1)), { keepSel: true });
+  });
+  // make this part (or phrase) the same as another part
+  const cf = $('select[name=copyFrom]', app), cs = $('select[name=copyShift]', app);
+  view.copyFrom = cf.value;
+  cf.onchange = () => { view.copyFrom = cf.value; };
+  cs.onchange = () => { view.copyShift = Number(cs.value); };
+  const source = () => { const t = env.tag(view.id); return (t.written || t.parts)[cf.value]; };
+  $('[data-act=copy-part]', app).onclick = () => {
+    if (!window.confirm(`Replace the whole ${view.part} part with the ${cf.value} part${Number(cs.value) ? ` (${Number(cs.value) > 0 ? 'an octave up' : 'an octave down'})` : ''}? Undo can bring it back.`)) return;
+    edit(n => C.copyPart(n, source(), { shift: Number(cs.value) }), {
+      then: () => { view.range = [0, view.notes.length]; view.sel = 0; },
+    });
+  };
+  const per = $('select[name=perBar]', app);
+  per.onchange = () => { view.perBar = Number(per.value); };
+  // keyboard: tap a key to set the selected note's pitch
+  const partMidis = view.notes.map(n => n[0]);
+  const [lo, hi] = rangeFor([...partMidis, Math.min(...partMidis) - 3, Math.max(...partMidis) + 3], 12);
+  const kbHost = $('.fix-kb', app);
+  view.kb = mountKeyboard(kbHost, {
+    lo, hi, tonic: tag.tonic, labels: true,
+    onKey: m => {
+      audio.unlock(); audio.stopAll(); audio.playNote(m, 0.45);
+      const i = view.sel;
+      if (m === view.notes[i][0] && !C.isRest(view.notes[i])) { if (view.advance !== false) { view.sel = Math.min(i + 1, view.range[1] - 1); render(); } return; }
+      edit(n => C.setPitch(n, i, m), { keepSel: true, then: () => { if (view.advance !== false) view.sel = Math.min(i + 1, view.range[1] - 1); } });
+    },
+  });
+  if (C.isRest(view.notes[view.sel])) view.kb.clearHint(); else view.kb.hint(view.notes[view.sel][0]);
+  const kbWrap = kbHost.querySelector('.kb-wrap');
+  if (view.kbScroll != null) kbWrap.scrollLeft = view.kbScroll;
+  kbWrap.onscroll = () => { view.kbScroll = kbWrap.scrollLeft; };
+  $('input[name=advance]', app).onchange = e => { view.advance = e.target.checked; };
+  const syl = $('input[name=syl]', app);
+  syl.onchange = () => edit(n => C.setSyllable(n, view.sel, syl.value), { keepSel: true });
+  const words = $('input[name=words]', app);
+  const lay = () => edit(n => C.layLyrics(n, words.value, view.range[0], view.range[1]), { keepSel: true });
+  $('[data-act=lay]', app).onclick = lay;
+  words.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); lay(); } };
+  syl.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); syl.blur(); } };
+
+  // listening
+  const phraseNotes = () => slice();
+  const realBtn = (btn, start, end, alsoSynth) => {
+    audio.unlock(); audio.stopAll();
+    const label = btn.textContent;
+    let synthStarted = false, following = false;
+    audio.playTrack(tag.tracks[view.part], start, end, err => { if (err) env.toast(err.message === 'blocked' ? 'The phone blocked playback — tap again' : 'The real recording needs a connection'); }, {
+      onState: s => {
+        btn.classList.toggle('loading', s === 'loading');
+        btn.textContent = s === 'loading' ? '⏳ Loading…' : s === 'playing' ? '■ Stop' : label;
+        btn.dataset.playing = s === 'playing' || s === 'loading' ? '1' : '';
+        if (s === 'playing' && alsoSynth && !synthStarted) { synthStarted = true; setTimeout(() => audio.playNotes(phraseNotes()), 150); }
+        if (s === 'playing' && !following) { following = true; audio.followTrack(view.notes, i => highlight(i)); }
+      },
+    });
+  };
+  const ns = phraseNotes();
+  const start = ns[0][1], last = ns[ns.length - 1], end = last[1] + last[2];
+  const p = $('[data-act=play]', app);
+  if (p) p.onclick = () => {
+    audio.unlock(); audio.stopAll();
+    const from = view.range[0];
+    const secs = audio.playNotes(ns, { onNote: k => highlight(from + k) });
+    clearTimeout(view.synthEnd);
+    view.synthEnd = setTimeout(() => { if (view) highlight(-1); }, secs * 1000 + 100);
+  };
+  for (const [act, s, e, synth] of [['real', start, end, false], ['both', start, end, true], ['real-all', 0, null, false]]) {
+    const b = $(`[data-act=${act}]`, app);
+    if (b) b.onclick = () => (b.dataset.playing ? audio.stopAll() : realBtn(b, s, e, synth));
+  }
+
+  // decisions
+  const rv = $('[data-act=revert]', app);
+  if (rv) rv.onclick = () => {
+    view.notes = baseNotes().map(n => [...n]);
+    view.undo = []; view.sel = 0;
+    persistEdit();
+    showReview(`${view.id}/${view.part}/0`);
+  };
+  $('[data-act=ok]', app).onclick = () => {
+    audio.stopAll();
+    // part done: record it as checked (with any edits)
+    const store = env.store();
+    const original = baseNotes();
+    C.recordPart(store, view.id, view.part, { notes: C.sameNotes(view.notes, original) ? null : view.notes, ok: true });
+    if (C.sameNotes(view.notes, original) && store[view.id].parts[view.part]) delete store[view.id].parts[view.part].notes;
+    env.save({ rebuild: true });
+    view.saved = JSON.stringify(view.notes);
+    const nextPart = PARTS[PARTS.indexOf(view.part) + 1];
+    if (back !== 'lesson' && nextPart) { go(0, nextPart); return; }
+    env.toast(back === 'lesson' ? `Saved — thanks!` : `${tag.title} checked ✓ — remember to Submit`);
+    if (sessionStorage.getItem('daily-tag:fixmode') && !tag.live && back !== 'lesson') { env.fixAnother(); return; }
+    location.hash = backHash();
+  };
+  $('[data-act=hide]', app).onclick = () => {
+    const why = window.prompt('What’s wrong with it? (optional)', '');
+    if (why === null) return;
+    C.recordHide(env.store(), view.id, { comment: why });
+    env.save({ rebuild: true });
+    view = null;
+    env.toast('Hidden on this phone — Submit to remove it for everyone');
+    location.hash = back && back !== 'lesson' ? 'review' : backHash();
+  };
+}
+
+/** The width the score is drawn at: the panel's real width, so wide screens fit more bars per line. */
+function staffWidth() {
+  const w = env.app.querySelector('.ours .staff-wrap');
+  if (w && w.clientWidth > 200) return Math.round(w.clientWidth);
+  const vw = typeof innerWidth === 'number' ? innerWidth : 375;
+  return Math.round(vw >= 720 ? Math.min(1100, vw) / 2 - 50 : vw - 52);
+}
+
+function staffFor(tag, notes, highlight) {
+  view.drawnWidth = staffWidth();
+  return env.staffHtml(tag, view.part, notes, { names: true, rhythm: true, highlight, force: true, final: true, width: view.drawnWidth });
+}
+
+/** Redraw the score if the panel turned out wider or narrower than estimated. */
+function refit() {
+  if (!view) return;
+  const wrap = env.app.querySelector('.ours .staff-wrap');
+  const tag = env.tag(view.id);
+  if (!wrap || !tag || Math.abs(wrap.clientWidth - view.drawnWidth) < 12) return;
+  wrap.innerHTML = staffFor(tag, view.notes.slice(view.range[0], view.range[1]), view.sel - view.range[0]);
+}
+if (typeof window !== 'undefined') {
+  let t = null;
+  window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { if (location.hash.startsWith('#review/')) refit(); }, 150); });
+}
+
+/** Light up note i (index into the whole part; -1 = none) on the chips,
+ *  the staff and the keyboard, as the synth or the real singer reaches it. */
+function highlight(i) {
+  const app = env.app;
+  app.querySelectorAll('.nchip').forEach(b => b.classList.toggle('playing', Number(b.dataset.i) === i));
+  const [from, to] = view.range;
+  const tag = env.tag(view.id);
+  const wrap = app.querySelector('.ours .staff-wrap');
+  if (wrap && tag) {
+    const on = i >= from && i < to;
+    wrap.innerHTML = staffFor(tag, view.notes.slice(from, to), on ? i - from : view.sel - from);
+    wrap.classList.toggle('live', on);
+  }
+  if (view.kb) view.kb.light(i >= 0 && view.notes[i] ? view.notes[i][0] : null);
+}
