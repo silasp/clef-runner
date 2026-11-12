@@ -1,0 +1,65 @@
+id: hector-the-hero
+title: Hector the Hero
+display_title: "1. Hector the Hero  (slow air · Scotland · J. Scott Skinner)"
+composer: James Scott Skinner (1843–1927) — public domain
+origin: Scotland
+type: slow air
+meter: 3/4
+key: A
+unit: 1/8
+tempo: {bpm: 54, beat_ql: 1.0, text: "Slow air — freely"}
+form: [P, Q, P, Q, R, S, R, S]     # full traditional form
+sources:
+  - name: The Session, setting 1292 (in D)
+    url: https://thesession.org/tunes/1292#setting1292
+    notes: >
+      Transposed D → A (Skinner's published key) so the tune sits on the A and
+      E strings and leaves room underneath for a second fiddle. Slides dropped;
+      grace notes and rolls kept. Slurred "ties" between repeated notes
+      written as real ties. The 8-bar strains are labelled P Q (A part) and
+      R S (B part); S is the B part's second half, which reprises Q's ending.
+range: [A4, A5]
+motifs:
+  head:      {abc: "AB | {B}c4 (3B/c/B/ A", note: "rising pickup into a long 3rd, turn figure falling to the tonic"}
+  sigh:      {abc: "f2 (3gfe c2", note: "high 6th falling through a triplet — the tune's emotional peak gesture"}
+  cadence:   {abc: "B4 {cB}A2 | A6", note: "2→1 sigh cadence"}
+  b-lift:    {abc: "(3efg a g", note: "triplet run up to the top A that opens the B part"}
+parts:
+  P:
+    pickup: "(AB"
+    abc: |
+      {B}c4) ((3B/c/B/ A) | (f2 (3gfe) c2 | e6- | e6 |
+      {B}c4) ((3B/c/B/ A) | f3 (Ac)A | (B4 c2 | B6) |
+    chords: "A | D | A | F#m | A | D | E | E7"
+    phrases:
+      - {bars: 1-4, cadence: open, peak: 2}
+      - {bars: 5-8, cadence: half, peak: 6}
+  Q:
+    pickup: "(AB"
+    abc: |
+      {B}c4) ((3B/c/B/ A) | (f2 (3gfe) c2 | e(A- A2 B2) | c(a- a2 (3fgf) |
+      (eA- A2) ((3cdc) | B4) {cB}A2 | A6- | A6 |
+    chords: "A | D | A | F#m | D . A/E | E7 . A | A | A"
+    phrases:
+      - {bars: 1-4, cadence: open, peak: 4}
+      - {bars: 5-8, cadence: perfect}
+  R:
+    pickup: "((3e/f/g/ a)g"
+    pickup_chord: E7
+    abc: |
+      ~f3 d f2 | (a3 (3g/a/g/) ~f2 | e6- | e4 f2 |
+      e4 (cd) | (eA- A2) (Bc) | B6- | B6 |
+    chords: "D | Bm7 | A | C#m . F#m | D | A | E | E7"
+    phrases:
+      - {bars: 1-4, cadence: open, peak: 2, climax: true}
+      - {bars: 5-8, cadence: half}
+  S:
+    pickup: "((3e/f/g/ a)g"
+    pickup_chord: E7
+    abc: |
+      ~f3 d f2 | (a3 (3g/a/g/) ~f2 | e(A- A2 B2) | c(a- a2 (3fgf) |
+      (eA- A2) ((3cdc) | B4) {cB}A2 | A6- | A6 |
+    chords: "D | Bm7 | A | F#m | D . A/E | E7 . A | A | A"
+    phrases:
+      - {bars: 1-4, cadence: open, peak: 2}
+      - {bars: 5-8, cadence: perfect}

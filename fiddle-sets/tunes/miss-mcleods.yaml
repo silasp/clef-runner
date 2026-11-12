@@ -1,0 +1,38 @@
+id: miss-mcleods
+title: Miss McLeod's Reel
+display_title: "4. Miss McLeod's  (reel · Scotland / Cape Breton / Ireland)"
+aliases: [Mrs MacLeod of Raasay, Mrs McLeod's Reel, Hop High Ladies]
+composer: Traditional (Scottish, 18th c.)
+origin: Scotland — a staple in Cape Breton, Ireland and Old-Time
+type: reel
+meter: 4/4
+key: A
+unit: 1/8
+tempo: {bpm: 176, beat_ql: 1.0, text: "Reel — driving"}
+form: [A, A, B, B]
+sources:
+  - name: The Session, setting 75 (in G)
+    url: https://thesession.org/tunes/75#setting75
+    notes: Transposed G → A, the key it is played in in Scotland and Cape Breton.
+range: [A4, B5]
+motifs:
+  hook:     {abc: "A2 cA BAcA", note: "tonic hammer with a skip to C#"}
+  lift:     {abc: "A2 ag fefa", note: "B part leap of an octave"}
+  turnaround: {abc: "agfe cdcB", note: "falling run to the 5th that loops back"}
+parts:
+  A:
+    abc: |
+      A2 cA BAcA | c2 cB cdcB | A2 cA BAcA | B2 BA BdcB |
+      A2 cA BAcA | c2 cB c2 e2 | f2 fg fefg | agfe cdcB |
+    chords: "A | A | A | E | A | F#m | D | A E"
+    phrases:
+      - {bars: 1-4, cadence: half}
+      - {bars: 5-8, cadence: half}
+  B:
+    abc: |
+      A2 ag fefa | c2 cB cdcB | A2 ag fefa | b2 ba bffg |
+      a2 ag fefa | cdcB c2 e2 | fefg fefg | agfe cdcB |
+    chords: "A D | A E | A D | Bm7 E | A D | A | D | A E"
+    phrases:
+      - {bars: 1-4, cadence: half, peak: 4}
+      - {bars: 5-8, cadence: half, peak: 5, climax: true}

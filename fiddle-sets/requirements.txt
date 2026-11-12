@@ -1,0 +1,6 @@
+music21>=9.1
+PyYAML>=6
+verovio>=4      # optional: PDF/PNG previews
+cairosvg>=2.7   # optional: PDF/PNG previews
+pypdf>=4        # optional: PDF previews
+pytest          # tests
