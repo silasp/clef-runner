@@ -1,0 +1,160 @@
+id: 01-hectors-crossing
+title: "Hector's Crossing"
+subtitle: "Set 1 · Scotland → Denmark → Ireland → Cape Breton · two violins"
+credit: "Traditional · arr. for two violins (fiddlekit)"
+ensemble: violin-duo
+voices:
+  v1: {instrument: violin, name: Violin I}
+  v2: {instrument: violin, name: Violin II}
+
+# Arc: free slow air → bouncy 2/4 dance → lilting 9/8 in a minor mode →
+# driving reel; keys A → D (A) → E dorian → A; the coda quotes Hector.
+# Each transition re-uses a motif from the tune it leaves or the tune it
+# approaches, and prepares the new key with its dominant (or modal VII).
+plan:
+  energy: [1, 3, 3, 5]
+  keys: [A, D, Edor, A]
+  meters: ["3/4", "2/4", "9/8", "4/4"]
+
+sequence:
+  # ------------------------------------------------------------ 1. Hector
+  - tune: hector-the-hero
+    passes:
+      - part: P                    # solo fiddle, then a low drone creeps in
+        dyn: {v1: mp, v2: p}
+        v2:
+          - {bars: 1-4, tech: rest}
+          - {bars: 5-8, tech: drone, notes: "E4 A4", high: A4}
+      - part: Q                    # counter-melody answers the long notes
+        dyn: {v2: mp}
+        v2: {tech: counter, fills: echo, suspensions: true}
+      - part: R                    # B part: full harmony, swell to the top A
+        dyn: {v1: mf, v2: mf}
+        v2: {tech: harmony}
+        hairpins: [{bars: 1-2, type: cresc}, {bars: 3-4, type: dim}]
+      - part: S
+        v2:
+          - {bars: 1-4, tech: harmony}
+          - {bars: 5-8, tech: counter, fills: none, suspensions: true}
+        dyn_at: {5: {v1: mp, v2: p}}
+        text: {6: "rit."}
+        fermata_end: true
+
+  # ------------------- T1: vamp sets the hopsa tempo on A7 (V of D), then
+  # Hector's rising pickup becomes a 16th-note run into the hopsa's anacrusis
+  - transition:
+      meter: 2/4
+      key: D
+      tempo: {bpm: 104, beat_ql: 1.0, text: "a tempo — Hopsa"}
+      chords: "A7 | A7"
+      v1: "z4 | A,/B,/C/D/ E2"
+      v2: {tech: vamp}
+      dyn: {v1: mf, v2: mf}
+
+  # ------------------------------------------------------- 2. Randers Hopsa
+  - tune: randers-hopsa
+    passes:
+      - part: A
+        dyn: {v1: mf, v2: mp}
+        v2: {tech: vamp}
+      - part: A                    # Scandinavian 'andrestemme': arpeggios in 3rds/6ths
+        v2: {tech: harmony}
+      - part: B                    # new key: sustained guide tones + a fill at the end
+        v2: {tech: counter, fills: scale}
+      - part: B
+        v2: {tech: harmony}
+        hairpins: [{bars: 13-15, type: cresc}]
+      - part: C                    # role swap: Vln II takes the tune
+        dyn: {v1: mp, v2: mf}
+        v1: {tech: harmony, above: true}
+        v2: {tech: melody}
+        text: {1: "Vln II: tune · Vln I: descant"}
+      - part: C
+        dyn: {v1: f, v2: f}
+        v2: {tech: harmony}
+
+  # ------------------- T2: the C-part's falling line, re-cast as the slip
+  # jig's broken thirds (♩ = ♩.), D → A → Bm (v of E dorian)
+  - transition:
+      meter: 9/8
+      key: Edor
+      tempo: {bpm: 104, beat_ql: 1.5, text: "♩ = ♩. — Slip jig"}
+      chords: "D A Bm"
+      v1: "f2d e2c d2B"
+      v2: {tech: harmony}
+      dyn: {v1: mf, v2: mf}
+
+  # ---------------------------------------------------- 3. A Fig for a Kiss
+  - tune: fig-for-a-kiss
+    passes:
+      - part: A                    # pulsing low drone, pipes-style
+        dyn: {v1: mf, v2: mp}
+        v2: {tech: drone, rhythm: beat, high: E4}
+      - part: A
+        v2: {tech: harmony}
+      - part: B:rep
+        v2: {tech: counter, rhythm: beat}
+      - part: B
+        v2: {tech: harmony}
+      - part: A                    # 2nd time: groove, then power unison
+        dyn: {v1: mp, v2: mf}
+        v2: {tech: vamp}
+      - part: A
+        dyn: {v1: f, v2: f}
+        v2: {tech: unison}
+      - part: B:rep                # descant above the tune
+        dyn: {v1: mf, v2: mp}
+        v2: {tech: harmony, above: true}
+      - part: B:last
+        dyn: {v1: f, v2: f}
+        v2: {tech: harmony}
+
+  # ------------------- T3: Vln II kicks the reel groove on E7 (V of A); Vln I
+  # turns the slip jig's cadence figure (B c d B A G F E) major — G becomes G#
+  - transition:
+      meter: 4/4
+      key: A
+      tempo: {bpm: 176, beat_ql: 1.0, text: "Reel"}
+      chords: "E7 | E7"
+      v1: "z8 | BcdB AGFE"
+      v2: {tech: vamp, pattern: reel-drive}
+      dyn: {v1: f, v2: mf}
+      hairpins: [{bars: 1-2, type: cresc, voices: [v2]}]
+
+  # ------------------------------------------------------ 4. Miss McLeod's
+  - tune: miss-mcleods
+    passes:
+      - part: A
+        dyn: {v1: f, v2: mf}
+        v2: {tech: vamp}
+      - part: A
+        v2: {tech: unison, octave: -1}
+      - part: B                    # walking guide-tone line in crotchets
+        v2: {tech: counter, rhythm: beat}
+      - part: B
+        v2: {tech: harmony}
+      - part: A                    # breakdown: drop the volume, then build
+        dyn: {v1: mp, v2: mp}
+        v2: {tech: counter, fills: scale}
+      - part: A
+        v2: {tech: harmony}
+        hairpins: [{bars: 5-8, type: cresc}]
+      - part: B
+        dyn: {v1: f, v2: f}
+        v2: {tech: vamp, pattern: reel-drive}
+      - part: B
+        dyn: {v1: ff, v2: ff}
+        v2: {tech: harmony}
+
+  # ------------------- Coda: Hector's opening phrase, broadened, then a
+  # ringing A chord (Vln I octave on open A; Vln II triple stop)
+  - transition:
+      meter: 4/4
+      key: A
+      chords: "A . E7 A | A"
+      v1: "c4 (3BcB A2 | [Aa]8"
+      v2:
+        - {bars: 1, tech: harmony}
+        - {bars: 2, tech: abc, abc: "[A,Ec]8"}
+      text: {1: "molto rit."}
+      fermata_end: true

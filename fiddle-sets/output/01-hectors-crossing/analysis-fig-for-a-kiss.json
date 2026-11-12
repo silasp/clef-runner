@@ -1,0 +1,350 @@
+{
+ "id": "fig-for-a-kiss",
+ "title": "A Fig for a Kiss",
+ "meter": "9/8",
+ "key": "E dorian",
+ "parts": {
+  "A": {
+   "key": "E dorian",
+   "bars": [
+    {
+     "bar": 1,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.5,
+       "chord": "Em",
+       "roman": "i",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 2,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.5,
+       "chord": "D",
+       "roman": "VII",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 3,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.5,
+       "chord": "Em",
+       "roman": "i",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 4,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 1.5,
+       "chord": "G",
+       "roman": "III",
+       "tension": 1.5
+      },
+      {
+       "off": 1.5,
+       "dur": 3.0,
+       "chord": "D",
+       "roman": "VII",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": "half",
+     "peak": false
+    },
+    {
+     "bar": 5,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.5,
+       "chord": "Em",
+       "roman": "i",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 6,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.5,
+       "chord": "D",
+       "roman": "VII",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 7,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.5,
+       "chord": "G",
+       "roman": "III",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 8,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 1.5,
+       "chord": "G",
+       "roman": "III",
+       "tension": 1.5
+      },
+      {
+       "off": 1.5,
+       "dur": 1.5,
+       "chord": "D",
+       "roman": "VII",
+       "tension": 1.5
+      },
+      {
+       "off": 3.0,
+       "dur": 1.5,
+       "chord": "Em",
+       "roman": "i",
+       "tension": 0.0
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": "perfect",
+     "peak": false
+    }
+   ],
+   "phrases": [
+    {
+     "bars": "1-4",
+     "cadence": "half"
+    },
+    {
+     "bars": "5-8",
+     "cadence": "perfect"
+    }
+   ]
+  },
+  "B": {
+   "key": "E dorian",
+   "bars": [
+    {
+     "bar": 1,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.5,
+       "chord": "Em",
+       "roman": "i",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 2,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.5,
+       "chord": "D",
+       "roman": "VII",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 3,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.5,
+       "chord": "Em",
+       "roman": "i",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 4,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 3.0,
+       "chord": "G",
+       "roman": "III",
+       "tension": 1.5
+      },
+      {
+       "off": 3.0,
+       "dur": 1.5,
+       "chord": "Em",
+       "roman": "i",
+       "tension": 0.0
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": "open",
+     "peak": false
+    },
+    {
+     "bar": 5,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.5,
+       "chord": "Em",
+       "roman": "i",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 6,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.5,
+       "chord": "D",
+       "roman": "VII",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 7,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 1.5,
+       "chord": "Em",
+       "roman": "i",
+       "tension": 0.0
+      },
+      {
+       "off": 1.5,
+       "dur": 1.5,
+       "chord": "D",
+       "roman": "VII",
+       "tension": 1.5
+      },
+      {
+       "off": 3.0,
+       "dur": 1.5,
+       "chord": "A",
+       "roman": "IV",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": null,
+     "peak": true
+    },
+    {
+     "bar": 8,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 1.5,
+       "chord": "G",
+       "roman": "III",
+       "tension": 1.5
+      },
+      {
+       "off": 1.5,
+       "dur": 1.5,
+       "chord": "D",
+       "roman": "VII",
+       "tension": 1.5
+      },
+      {
+       "off": 3.0,
+       "dur": 1.5,
+       "chord": "Em",
+       "roman": "i",
+       "tension": 0.0
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": "perfect",
+     "peak": false
+    }
+   ],
+   "phrases": [
+    {
+     "bars": "1-4",
+     "cadence": "open"
+    },
+    {
+     "bars": "5-8",
+     "cadence": "perfect",
+     "peak": 7,
+     "climax": true
+    }
+   ]
+  }
+ },
+ "motifs": {
+  "broken-thirds": {
+   "abc": "G2B E2B BAG",
+   "note": "falling broken thirds over Em — the hook"
+  },
+  "cadence": {
+   "abc": "B/c/dB AGF E3",
+   "note": "turn up to D then a scale fall to E"
+  },
+  "b-call": {
+   "abc": "g2e g2e edB",
+   "note": "B part octave-up answer"
+  }
+ }
+}

@@ -1,0 +1,52 @@
+id: randers-hopsa
+title: Randers Hopsa
+display_title: "2. Randers Hopsa  (hopsa · Denmark)"
+aliases: [Hopsa fra Råby, Råby Hopsa]
+composer: Traditional
+origin: Denmark (Randers, East Jutland)
+type: hopsa (2/4 couple dance, polka family)
+meter: 2/4
+key: D
+unit: 1/8
+tempo: {bpm: 104, beat_ql: 1.0, text: "Hopsa — bouncy"}
+form: [A, A, B, B, C, C]
+sources:
+  - name: The Session, settings 33685 and 57775
+    url: https://thesession.org/tunes/17533
+    notes: >
+      Setting 33685 (written two bars to the bar) re-barred into 2/4 using
+      setting 57775 as a guide. The B part is printed in A major (it modulates
+      to the dominant); the C part returns to D.
+range: [A3, B5]
+motifs:
+  arpeggio:  {abc: "F/F/ | FA,DF ADFA | dFAd", note: "climbing D arpeggio from the low A — the tune's signature"}
+  turn:      {abc: "fg/f/ ed", note: "snappy upper turn"}
+  stamp:     {abc: "dd/d/ dd | d4", note: "repeated-note 'stamp' cadence (dancers' hop)"}
+  fall:      {abc: "f2 ed | d2 cB | A2", note: "C-part stepwise fall from F#"}
+parts:
+  A:
+    pickup: "F/F/"
+    abc: |
+      FA,DF | ADFA | dFAd | fg/f/ ed | cAEF | G>F GB/B/ | AdDE | F3 F/F/ |
+      FA,DF | ADFA | dFAd | fg/f/ ed | cAEF | G>A Bc | dd/d/ dd | d4 |
+    chords: "D | D | D | D | A | A7 | D | D | D | D | Bm | D G | A | A7 | D | D"
+    phrases:
+      - {bars: 1-8, cadence: open}
+      - {bars: 9-16, cadence: perfect}
+  B:
+    key: A
+    abc: |
+      e2 ce | a2 ^gf | ec AB | c3 e | d>c Bc | de f^g | b>a ^gf | ec d^d |
+      e2 ce | a2 ^gf | ec AB | c3 e | d>c Bc | de f^g | aa/a/ aa | a4 |
+    chords: "A | A | A | A | E7 | E7 | E | A | A | D E | A | F#m | E7 | E7 | A | A"
+    phrases:
+      - {bars: 1-8, cadence: perfect}
+      - {bars: 9-16, cadence: perfect, peak: 15, climax: true}
+  C:
+    abc: |
+      f2 ed | d2 cB | A2 F/E/D | A,DFA | G>F EF | GAcA | d2 d/c/d/e/ | fd A2 |
+      f2 ed | d2 cB | A2 F/E/D | A,DFA | G>F EF | GABc | dd/d/ dd | d4 |
+    chords: "D | Bm | D | D | A7 | A7 | D | D | D | G | D | D | A7 | A7 | D | D"
+    phrases:
+      - {bars: 1-8, cadence: open}
+      - {bars: 9-16, cadence: perfect}

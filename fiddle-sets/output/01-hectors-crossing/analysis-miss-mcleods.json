@@ -1,0 +1,344 @@
+{
+ "id": "miss-mcleods",
+ "title": "Miss McLeod's Reel",
+ "meter": "4/4",
+ "key": "A major",
+ "parts": {
+  "A": {
+   "key": "A major",
+   "bars": [
+    {
+     "bar": 1,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 2,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 3,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 4,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.0,
+       "chord": "E",
+       "roman": "V",
+       "tension": 3.0
+      }
+     ],
+     "tension": 3.0,
+     "phrase_end": "half",
+     "peak": false
+    },
+    {
+     "bar": 5,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 6,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.0,
+       "chord": "F#m",
+       "roman": "vi",
+       "tension": 1.0
+      }
+     ],
+     "tension": 1.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 7,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.0,
+       "chord": "D",
+       "roman": "IV",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 8,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      },
+      {
+       "off": 2.0,
+       "dur": 2.0,
+       "chord": "E",
+       "roman": "V",
+       "tension": 3.0
+      }
+     ],
+     "tension": 3.0,
+     "phrase_end": "half",
+     "peak": false
+    }
+   ],
+   "phrases": [
+    {
+     "bars": "1-4",
+     "cadence": "half"
+    },
+    {
+     "bars": "5-8",
+     "cadence": "half"
+    }
+   ]
+  },
+  "B": {
+   "key": "A major",
+   "bars": [
+    {
+     "bar": 1,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      },
+      {
+       "off": 2.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "IV",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 2,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      },
+      {
+       "off": 2.0,
+       "dur": 2.0,
+       "chord": "E",
+       "roman": "V",
+       "tension": 3.0
+      }
+     ],
+     "tension": 3.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 3,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      },
+      {
+       "off": 2.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "IV",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 4,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "Bm7",
+       "roman": "ii7",
+       "tension": 2.0
+      },
+      {
+       "off": 2.0,
+       "dur": 2.0,
+       "chord": "E",
+       "roman": "V",
+       "tension": 3.0
+      }
+     ],
+     "tension": 3.0,
+     "phrase_end": "half",
+     "peak": true
+    },
+    {
+     "bar": 5,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      },
+      {
+       "off": 2.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "IV",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": null,
+     "peak": true
+    },
+    {
+     "bar": 6,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 7,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 4.0,
+       "chord": "D",
+       "roman": "IV",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 8,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      },
+      {
+       "off": 2.0,
+       "dur": 2.0,
+       "chord": "E",
+       "roman": "V",
+       "tension": 3.0
+      }
+     ],
+     "tension": 3.0,
+     "phrase_end": "half",
+     "peak": false
+    }
+   ],
+   "phrases": [
+    {
+     "bars": "1-4",
+     "cadence": "half",
+     "peak": 4
+    },
+    {
+     "bars": "5-8",
+     "cadence": "half",
+     "peak": 5,
+     "climax": true
+    }
+   ]
+  }
+ },
+ "motifs": {
+  "hook": {
+   "abc": "A2 cA BAcA",
+   "note": "tonic hammer with a skip to C#"
+  },
+  "lift": {
+   "abc": "A2 ag fefa",
+   "note": "B part leap of an octave"
+  },
+  "turnaround": {
+   "abc": "agfe cdcB",
+   "note": "falling run to the 5th that loops back"
+  }
+ }
+}

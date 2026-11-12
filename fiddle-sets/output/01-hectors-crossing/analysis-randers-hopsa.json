@@ -1,0 +1,807 @@
+{
+ "id": "randers-hopsa",
+ "title": "Randers Hopsa",
+ "meter": "2/4",
+ "key": "D major",
+ "parts": {
+  "A": {
+   "key": "D major",
+   "bars": [
+    {
+     "bar": 1,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 2,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 3,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 4,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 5,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "V",
+       "tension": 3.0
+      }
+     ],
+     "tension": 3.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 6,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A7",
+       "roman": "V7",
+       "tension": 3.5
+      }
+     ],
+     "tension": 3.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 7,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 8,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": "open",
+     "peak": false
+    },
+    {
+     "bar": 9,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 10,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 11,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "Bm",
+       "roman": "vi",
+       "tension": 1.0
+      }
+     ],
+     "tension": 1.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 12,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 1.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      },
+      {
+       "off": 1.0,
+       "dur": 1.0,
+       "chord": "G",
+       "roman": "IV",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 13,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "V",
+       "tension": 3.0
+      }
+     ],
+     "tension": 3.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 14,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A7",
+       "roman": "V7",
+       "tension": 3.5
+      }
+     ],
+     "tension": 3.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 15,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 16,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": "perfect",
+     "peak": false
+    }
+   ],
+   "phrases": [
+    {
+     "bars": "1-8",
+     "cadence": "open"
+    },
+    {
+     "bars": "9-16",
+     "cadence": "perfect"
+    }
+   ]
+  },
+  "B": {
+   "key": "A major",
+   "bars": [
+    {
+     "bar": 1,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 2,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 3,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 4,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 5,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "E7",
+       "roman": "V7",
+       "tension": 3.5
+      }
+     ],
+     "tension": 3.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 6,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "E7",
+       "roman": "V7",
+       "tension": 3.5
+      }
+     ],
+     "tension": 3.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 7,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "E",
+       "roman": "V",
+       "tension": 3.0
+      }
+     ],
+     "tension": 3.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 8,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": "perfect",
+     "peak": false
+    },
+    {
+     "bar": 9,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 10,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 1.0,
+       "chord": "D",
+       "roman": "IV",
+       "tension": 1.5
+      },
+      {
+       "off": 1.0,
+       "dur": 1.0,
+       "chord": "E",
+       "roman": "V",
+       "tension": 3.0
+      }
+     ],
+     "tension": 3.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 11,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 12,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "F#m",
+       "roman": "vi",
+       "tension": 1.0
+      }
+     ],
+     "tension": 1.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 13,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "E7",
+       "roman": "V7",
+       "tension": 3.5
+      }
+     ],
+     "tension": 3.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 14,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "E7",
+       "roman": "V7",
+       "tension": 3.5
+      }
+     ],
+     "tension": 3.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 15,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": true
+    },
+    {
+     "bar": 16,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": "perfect",
+     "peak": false
+    }
+   ],
+   "phrases": [
+    {
+     "bars": "1-8",
+     "cadence": "perfect"
+    },
+    {
+     "bars": "9-16",
+     "cadence": "perfect",
+     "peak": 15,
+     "climax": true
+    }
+   ]
+  },
+  "C": {
+   "key": "D major",
+   "bars": [
+    {
+     "bar": 1,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 2,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "Bm",
+       "roman": "vi",
+       "tension": 1.0
+      }
+     ],
+     "tension": 1.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 3,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 4,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 5,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A7",
+       "roman": "V7",
+       "tension": 3.5
+      }
+     ],
+     "tension": 3.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 6,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A7",
+       "roman": "V7",
+       "tension": 3.5
+      }
+     ],
+     "tension": 3.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 7,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 8,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": "open",
+     "peak": false
+    },
+    {
+     "bar": 9,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 10,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "G",
+       "roman": "IV",
+       "tension": 1.5
+      }
+     ],
+     "tension": 1.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 11,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 12,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 13,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A7",
+       "roman": "V7",
+       "tension": 3.5
+      }
+     ],
+     "tension": 3.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 14,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "A7",
+       "roman": "V7",
+       "tension": 3.5
+      }
+     ],
+     "tension": 3.5,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 15,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": null,
+     "peak": false
+    },
+    {
+     "bar": 16,
+     "chords": [
+      {
+       "off": 0.0,
+       "dur": 2.0,
+       "chord": "D",
+       "roman": "I",
+       "tension": 0.0
+      }
+     ],
+     "tension": 0.0,
+     "phrase_end": "perfect",
+     "peak": false
+    }
+   ],
+   "phrases": [
+    {
+     "bars": "1-8",
+     "cadence": "open"
+    },
+    {
+     "bars": "9-16",
+     "cadence": "perfect"
+    }
+   ]
+  }
+ },
+ "motifs": {
+  "arpeggio": {
+   "abc": "F/F/ | FA,DF ADFA | dFAd",
+   "note": "climbing D arpeggio from the low A — the tune's signature"
+  },
+  "turn": {
+   "abc": "fg/f/ ed",
+   "note": "snappy upper turn"
+  },
+  "stamp": {
+   "abc": "dd/d/ dd | d4",
+   "note": "repeated-note 'stamp' cadence (dancers' hop)"
+  },
+  "fall": {
+   "abc": "f2 ed | d2 cB | A2",
+   "note": "C-part stepwise fall from F#"
+  }
+ }
+}
